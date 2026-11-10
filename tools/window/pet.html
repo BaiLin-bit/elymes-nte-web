@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>曳尔沐桌宠</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent;
+      cursor: default;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #pet-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      image-rendering: pixelated;
+    }
+    /* 右键菜单：Win95/98 的凸起面板 */
+    #context-menu {
+      position: fixed; display: none;
+      background: #c0c0c0;
+      border-top: 2px solid #ffffff;
+      border-left: 2px solid #ffffff;
+      border-right: 2px solid #404040;
+      border-bottom: 2px solid #404040;
+      font-family: "MS Sans Serif", "SimSun", sans-serif;
+      font-size: 12px;
+      z-index: 9999;
+      min-width: 148px;
+      padding: 2px;
+      cursor: default;
+    }
+    #context-menu.show { display: block; }
+    .menu-item { padding: 4px 22px 4px 26px; cursor: default; white-space: nowrap; }
+    .menu-item:hover { background: #000080; color: #ffffff; }
+    .menu-sep { height: 0; border-top: 1px solid #808080; border-bottom: 1px solid #ffffff; margin: 3px 2px; }
+    #boot-error {
+      position: fixed; left: 8px; top: 8px; z-index: 10000;
+      background: #7a0000; color: #ffd7d7; padding: 6px 10px;
+      font: 12px/1.5 Consolas, monospace; display: none; max-width: 60vw;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pet-canvas"></canvas>
+
+  <div id="context-menu">
+    <div class="menu-item" data-action="chat">打开聊天窗口</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-action="calm">别躲我（慢慢飞）</div>
+    <div class="menu-item" data-action="wander">自己待着</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-action="hide">藏起来</div>
+    <div class="menu-item" data-action="exit">关闭桌宠</div>
+  </div>
+
+  <div id="boot-error"></div>
+
+  <script type="module">
+    // ============================================================
+    // 桌宠浮层 —— 跑在宿主 Electron 的透明全屏浮层里
+    //   window.petHost 由宿主 preload 注入；没有它时回退成普通网页窗口
+    // ============================================================
+    // 这几个是可调的：默认值写在这里，Edit 面板存过设置就以那边的为准。
+    let SIZE = 60;              // 角色边长（像素）
+    let AVOID_IN = 130;         // 光标进这个半径才开始躲
+    let AVOID_OUT = 200;        // 出这个半径才安心自己逛
+    let SPEED = 1;              // 整体速度系数
+    let REST_ON = true;         // 会不会时不时停下来歇一歇
+    let REST_MS_MIN = 3500;     // 安静一次最少待多久
+    let REST_MS_MAX = 7000;     // 最长待多久
+    let REST_GAP_MIN = 6000;    // 两次安静之间至少隔多久
+    let REST_GAP_MAX = 14000;   // 最多隔多久
+    const FLAP_MS = 1500;       // 翅膀一个来回的时间：慢
+    const FLAP_AMP = 0.12;      // 翅膀压扁比例：轻，但要看得出来
+    const CLICK_DELAY = 240;    // 区分单击与双击
+    const canvas = document.getElementById('pet-canvas');
+    const ctx = canvas.getContext('2d');
+    const menu = document.getElementById('context-menu');
+    const HOST = window.petHost ?? null;
+    // 调试：页面地址后加 ?debug=1 就在左上角显示状态
+    const DEBUG = new URLSearchParams(location.search).has('debug');
+
+    const fail = (msg) => {
+      const el = document.getElementById('boot-error');
+      el.style.display = 'block';
+      el.textContent = `${el.textContent}\n${msg}`.trim();
+      console.error(msg);
+    };
+    window.addEventListener('error', (e) => fail(`脚本错误：${e.message}`));
+
+    // ---------------- 画布 ----------------
+    let W = 1, H = 1;
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth; H = window.innerHeight;
+      canvas.width = Math.max(1, Math.round(W * dpr));
+      canvas.height = Math.max(1, Math.round(H * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      pet.x = Math.min(Math.max(pet.x, SIZE), Math.max(SIZE, W - SIZE));
+      pet.y = Math.min(Math.max(pet.y, SIZE), Math.max(SIZE, H - SIZE));
+    }
+
+    // ---------------- 素材 ----------------
+    const assets = {};
+    const ASSET_NAMES = [
+      '正面_Y', '正面_翅膀1', '正面_翅膀2',
+      '背面_Y', '背面_翅膀1', '背面_右翅膀',
+      '向左移动_Y', '向左移动_翅膀1', '向左移动_翅膀2',
+      'Y_向左后退', '向左后退_翅膀', '向左后退_翅膀2',
+      'Y_向右后退', '向右后退_翅膀', '向右后退_翅膀2',
+      'Y向左后退_受击_白', 'Y向左后退_受击_红', 'Y向左后退_受击_白身红边',
+    ];
+    let loaded = 0;
+    const loadAll = new Promise((resolve) => {
+      const done = () => { if (++loaded === ASSET_NAMES.length) resolve(); };
+      for (const name of ASSET_NAMES) {
+        const img = new Image();
+        img.onload = done;
+        img.onerror = () => { fail(`素材加载失败：${name}.png`); done(); };
+        img.src = `/assets/pet/${encodeURIComponent(name)}.png`;
+        assets[name] = img;
+      }
+    });
+
+    // ---------------- 动画表（每帧 = 身体 + 翅膀 + 浮动） ----------------
+    // flip 只在「素材本身朝左、但角色正朝右」时才需要；向右后退那套已经是镜像好的朝右图，不能再翻一次
+    const ANIM = {
+      idle_front: { ms: 150, flip: false, frames: [
+        { body: '正面_Y', wings: ['正面_翅膀1', '正面_翅膀2'], dy: 0 },
+        { body: '正面_Y', wings: ['正面_翅膀1', '正面_翅膀2'], dy: -1 },
+        { body: '正面_Y', wings: ['正面_翅膀1', '正面_翅膀2'], dy: -2 },
+        { body: '正面_Y', wings: ['正面_翅膀1', '正面_翅膀2'], dy: -1 },
+      ] },
+      idle_back: { ms: 150, flip: false, frames: [
+        { body: '背面_Y', wings: ['背面_翅膀1', '背面_右翅膀'], dy: 0 },
+        { body: '背面_Y', wings: ['背面_翅膀1', '背面_右翅膀'], dy: -2 },
+        { body: '背面_Y', wings: ['背面_翅膀1', '背面_右翅膀'], dy: -3 },
+        { body: '背面_Y', wings: ['背面_翅膀1', '背面_右翅膀'], dy: -1 },
+      ] },
+      fly_left: { ms: 90, flip: false, frames: [
+        { body: 'Y_向左后退', wings: ['向左后退_翅膀', '向左后退_翅膀2'], dy: 0 },
+        { body: 'Y_向左后退', wings: ['向左后退_翅膀', '向左后退_翅膀2'], dy: -3 },
+        { body: 'Y_向左后退', wings: ['向左后退_翅膀', '向左后退_翅膀2'], dy: -5 },
+        { body: 'Y_向左后退', wings: ['向左后退_翅膀', '向左后退_翅膀2'], dy: -2 },
+      ] },
+      fly_right: { ms: 90, flip: false, frames: [
+        { body: 'Y_向右后退', wings: ['向右后退_翅膀', '向右后退_翅膀2'], dy: 0 },
+        { body: 'Y_向右后退', wings: ['向右后退_翅膀', '向右后退_翅膀2'], dy: -3 },
+        { body: 'Y_向右后退', wings: ['向右后退_翅膀', '向右后退_翅膀2'], dy: -5 },
+        { body: 'Y_向右后退', wings: ['向右后退_翅膀', '向右后退_翅膀2'], dy: -2 },
+      ] },
+      glide: { ms: 110, flip: true, frames: [
+        { body: '向左移动_Y', wings: ['向左移动_翅膀1', '向左移动_翅膀2'], dy: 0 },
+        { body: '向左移动_Y', wings: ['向左移动_翅膀1', '向左移动_翅膀2'], dy: -2 },
+        { body: '向左移动_Y', wings: ['向左移动_翅膀1', '向左移动_翅膀2'], dy: -4 },
+        { body: '向左移动_Y', wings: ['向左移动_翅膀1', '向左移动_翅膀2'], dy: -2 },
+      ] },
+      hit: { ms: 70, flip: true, frames: [
+        { body: 'Y向左后退_受击_白' },
+        { body: 'Y向左后退_受击_白身红边' },
+        { body: 'Y向左后退_受击_白' },
+      ] },
+    };
+
+    // ---------------- 每片翅膀的自身中心（归一化到 0~1），扇动时绕它压扁 ----------------
+    const WING_PIVOT = {
+      '正面_翅膀1': [0.1194, 0.5570],
+      '正面_翅膀2': [0.8751, 0.5570],
+      '背面_翅膀1': [0.1520, 0.5324],
+      '背面_右翅膀': [0.8427, 0.5324],
+      '向左移动_翅膀1': [0.8408, 0.5616],
+      '向左移动_翅膀2': [0.2854, 0.5564],
+      '向左后退_翅膀': [0.1579, 0.4352],
+      '向左后退_翅膀2': [0.6700, 0.4407],
+      '向右后退_翅膀': [0.8366, 0.4352],
+      '向右后退_翅膀2': [0.3245, 0.4407],
+    };
+
+    // ---------------- 状态 ----------------
+    const pet = {
+      x: Math.max(SIZE, window.innerWidth / 2),
+      y: Math.max(SIZE, window.innerHeight / 2),
+      vx: 0, vy: 0,
+      speed: 2.2,
+      anim: 'idle_front',
+      frame: 0, frameTick: 0,
+      mode: 'wander',        // wander 自己逛 | avoid 躲光标 | hit 受击
+      calm: false,           // 右键「别躲我」：关掉躲避，可以凑近看
+      tx: 0, ty: 0,          // 目标点
+      facing: 1,             // 1 朝右，-1 朝左
+      hitUntil: 0,
+      noise: Math.random() * 1000,
+      nextTarget: 0,
+      restUntil: 0,          // 安静到什么时候（这段时间只在原地轻轻悬停）
+      nextRest: 4000,        // 下一次该进入安静的时间点
+    };
+    pet.tx = pet.x; pet.ty = pet.y;
+
+    // ---------------- 光标（优先走宿主通道） ----------------
+    const cursor = { x: -9999, y: -9999, on: false };
+    if (HOST) {
+      HOST.onCursor((p) => {
+        if (!p) { cursor.on = false; syncInteractive(true); return; }
+        cursor.x = p.x; cursor.y = p.y; cursor.on = true;
+        syncInteractive();
+      });
+      HOST.setLanguage?.('zh');
+    } else {
+      window.addEventListener('mousemove', (e) => {
+        cursor.x = e.clientX; cursor.y = e.clientY; cursor.on = true;
+      });
+    }
+
+    // 点击穿透：只在光标压到角色、或菜单开着时接管鼠标
+    let interactive = false;
+    function syncInteractive(force) {
+      const want = menu.classList.contains('show') || (cursor.on && onPet(cursor.x, cursor.y));
+      // 宿主那边的鼠标持有权是 1.5 秒的租约，只在状态变化时报一次会过期，
+      // 表现就是「菜单明明开着，过一会儿就点不动了」。所以只要还在持有就一直续租。
+      if (!want && !force && want === interactive) return;
+      interactive = want;
+      try { HOST?.setInteractive(want); } catch { /* 忽略 */ }
+    }
+    // 判定半径别贴着角色本体，不然它一躲就点不中；放宽到画布的大半。
+    const onPet = (x, y) => Math.hypot(x - pet.x, y - pet.y) <= Math.max(26, SIZE * 0.72);
+
+    // ---------------- 噪声游走（苍蝇路径） ----------------
+    const noise1 = (t) => Math.sin(t * 0.7) * 0.55 + Math.sin(t * 1.31 + 1.7) * 0.3 + Math.sin(t * 2.13 + 3.3) * 0.15;
+    const noise2 = (t) => Math.sin(t * 0.53 + 2.1) * 0.55 + Math.sin(t * 1.17 + 0.4) * 0.3 + Math.sin(t * 2.41 + 5.1) * 0.15;
+
+    function pickTarget(now) {
+      const pad = SIZE + 24;
+      const maxX = Math.max(pad, W - pad), maxY = Math.max(pad, H - pad);
+      // 挑点的时候绕开光标周围，别一转身又飞回人家手上
+      const keepAway = pet.calm ? 70 : AVOID_OUT;
+      for (let i = 0; i < 24; i++) {
+        const x = pad + Math.random() * (maxX - pad);
+        const y = pad + Math.random() * (maxY - pad);
+        if (!cursor.on || Math.hypot(cursor.x - x, cursor.y - y) > keepAway) {
+          pet.tx = x;
+          pet.ty = y;
+          break;
+        }
+        if (i === 23) { pet.tx = x; pet.ty = y; }
+      }
+      pet.nextTarget = now + 2600 + Math.random() * 3400;
+    }
+
+    // ---------------- 主循环 ----------------
+    let last = performance.now();
+    function frame(now) {
+      const dt = Math.min(64, now - last);
+      last = now;
+      update(dt, now);
+      draw();
+      syncInteractive();
+      requestAnimationFrame(frame);
+    }
+
+    function update(dt, now) {
+      // 受击优先
+      if (pet.mode === 'hit') {
+        if (now >= pet.hitUntil) {
+          pet.mode = 'wander';
+          pet.anim = 'idle_front';
+          pet.frame = 0; pet.frameTick = 0;
+          pickTarget(now);
+        } else {
+          pet.frameTick += dt;
+          const a = ANIM.hit;
+          if (pet.frameTick >= a.ms) { pet.frameTick = 0; pet.frame = (pet.frame + 1) % a.frames.length; }
+          // 被打飞：沿随机方向弹出去，边飞边抖，速度慢慢衰减
+          const step = dt / 16.67;
+          pet.x += pet.vx * step + (Math.random() - 0.5) * 1.6;
+          pet.y += pet.vy * step + (Math.random() - 0.5) * 1.6;
+          pet.vx *= 0.94;
+          pet.vy *= 0.94;
+          const edge = SIZE * 0.5 + 4;
+          if (pet.x < edge) { pet.x = edge; pet.vx = Math.abs(pet.vx) * 0.5; }
+          if (pet.x > W - edge) { pet.x = W - edge; pet.vx = -Math.abs(pet.vx) * 0.5; }
+          if (pet.y < edge) { pet.y = edge; pet.vy = Math.abs(pet.vy) * 0.5; }
+          if (pet.y > H - edge) { pet.y = H - edge; pet.vy = -Math.abs(pet.vy) * 0.5; }
+          return;
+        }
+      }
+
+      // 模式：光标凑近就躲开，远了就自己逛（右键「别躲我」可关掉躲避）
+      const d = cursor.on ? Math.hypot(cursor.x - pet.x, cursor.y - pet.y) : Infinity;
+      const avoidIn = pet.calm ? 34 : AVOID_IN;
+      if (pet.mode === 'wander' && d < avoidIn) pet.mode = 'avoid';
+      else if (pet.mode === 'avoid' && d > Math.max(avoidIn + 140, AVOID_OUT * (pet.calm ? 0.3 : 1))) {
+        pet.mode = 'wander';
+        pickTarget(now);
+      }
+
+      // 飞一阵子就停下来悬停一会儿，不要一直飘（设置里可以关掉）
+      if (REST_ON && pet.mode === 'wander' && now >= pet.nextRest) {
+        pet.restUntil = now + REST_MS_MIN + Math.random() * (REST_MS_MAX - REST_MS_MIN);
+        pet.nextRest = pet.restUntil + REST_GAP_MIN + Math.random() * (REST_GAP_MAX - REST_GAP_MIN);
+      }
+      pet.noise += dt * 0.0016;
+
+      let tx, ty;
+      if (pet.mode === 'avoid') {
+        // 朝远离光标的方向撤，距离越近跑得越急
+        let ax = pet.x - cursor.x, ay = pet.y - cursor.y;
+        const len = Math.hypot(ax, ay);
+        if (len < 0.001) {
+          const r = Math.random() * Math.PI * 2;
+          ax = Math.cos(r); ay = Math.sin(r);
+        } else { ax /= len; ay /= len; }
+        // 侧向加一点偏移，避免笔直后退像被吸住；目标点压回画面内，免得顶在边上抖
+        const side = Math.sin(now * 0.0013) * 0.5;
+        const edge = SIZE * 0.5 + 6;
+        tx = Math.max(edge, Math.min(W - edge, pet.x + (ax - ay * side) * 240));
+        ty = Math.max(edge, Math.min(H - edge, pet.y + (ay + ax * side) * 240));
+      } else if (now < pet.restUntil) {
+        // 安静时间：就在原地轻轻悬停，不乱飞
+        tx = pet.x + noise1(pet.noise) * 6;
+        ty = pet.y + noise2(pet.noise) * 6;
+      } else {
+        if (now >= pet.nextTarget) pickTarget(now);
+        // 目标点再做一层噪声扰动，飞起来像只没头苍蝇
+        tx = pet.tx + noise1(pet.noise) * 120;
+        ty = pet.ty + noise2(pet.noise) * 120;
+      }
+
+      const ddx = tx - pet.x, ddy = ty - pet.y;
+      const dist = Math.hypot(ddx, ddy) || 1;
+      let want = 2.4;
+      if (pet.mode === 'avoid') {
+        // 越近越快；离得极近时反而减速，方便点得到
+        const near = Math.max(0, avoidIn - d);
+        want = d < 46 ? 2.0 : Math.min(4.8, 1.8 + near * 0.016);
+      } else if (now < pet.restUntil) {
+        want = 0.3;   // 安静时间：几乎不动，落在 idle_front 上
+      }
+      want *= SPEED;
+      const ax2 = (ddx / dist) * want, ay2 = (ddy / dist) * want;
+      pet.vx += (ax2 - pet.vx) * 0.14;
+      pet.vy += (ay2 - pet.vy) * 0.14;
+
+      pet.x += pet.vx * (dt / 16.67);
+      pet.y += pet.vy * (dt / 16.67);
+
+      // 边界
+      const pad = SIZE * 0.5 + 4;
+      if (pet.x < pad) { pet.x = pad; pet.vx = Math.abs(pet.vx) * 0.6; }
+      if (pet.x > W - pad) { pet.x = W - pad; pet.vx = -Math.abs(pet.vx) * 0.6; }
+      if (pet.y < pad) { pet.y = pad; pet.vy = Math.abs(pet.vy) * 0.6; }
+      if (pet.y > H - pad) { pet.y = H - pad; pet.vy = -Math.abs(pet.vy) * 0.6; }
+
+      // 朝向 + 动画
+      if (Math.abs(pet.vx) > 0.25) pet.facing = pet.vx >= 0 ? 1 : -1;
+      const moving = Math.hypot(pet.vx, pet.vy) > 0.45;
+      // 受击期间锁在受击帧上，否则下一帧就会被待机/飞行顶掉，闪白等于没画
+      if (pet.mode !== 'hit') {
+        // 后仰飞（fly_left / fly_right）只留给「躲鼠标」用，平时自己逛用 glide
+        const nextAnim = !moving
+          ? 'idle_front'
+          : (pet.mode === 'avoid'
+              ? (pet.facing > 0 ? 'fly_right' : 'fly_left')
+              : 'glide');
+        if (nextAnim !== pet.anim) { pet.anim = nextAnim; pet.frame = 0; pet.frameTick = 0; }
+      }
+
+      const a = ANIM[pet.anim];
+      pet.frameTick += dt;
+      if (pet.frameTick >= a.ms) { pet.frameTick = 0; pet.frame = (pet.frame + 1) % a.frames.length; }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      const a = ANIM[pet.anim] || ANIM.idle_front;
+      const f = a.frames[pet.frame % a.frames.length];
+      // 只有标了 flip 的动画组才跟着朝向翻；fly_left / fly_right 两套图本身已经分好左右
+      const flip = !!(a.flip && pet.facing > 0);
+      const dx = pet.x - SIZE / 2;
+      const dy = pet.y - SIZE / 2 + (f.dy || 0);
+
+      ctx.save();
+      if (flip) {
+        ctx.translate(pet.x, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-pet.x, 0);
+      }
+      // 翅膀在身后；缓慢轻幅扇动 = 整体上下移 1 个像素（整数，像素不糊）+ 绕自身中心竖向压扁
+      const phase = Math.sin(performance.now() / FLAP_MS * Math.PI * 2);
+      const flap = 1 - FLAP_AMP * (0.5 + 0.5 * phase);
+      const wingDy = Math.round(phase);   // -1 / 0 / 1
+      if (f.wings) {
+        for (const w of f.wings) {
+          const img = assets[w];
+          if (!(img?.complete && img.naturalWidth)) continue;
+          const pv = WING_PIVOT[w];
+          if (pv) {
+            const px = dx + pv[0] * SIZE, py = dy + wingDy + pv[1] * SIZE;
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.scale(1, flap);
+            ctx.translate(-px, -py);
+            ctx.drawImage(img, dx, dy + wingDy, SIZE, SIZE);
+            ctx.restore();
+          } else {
+            ctx.drawImage(img, dx, dy + wingDy, SIZE, SIZE);
+          }
+        }
+      }
+      const body = assets[f.body];
+      if (body?.complete && body.naturalWidth) ctx.drawImage(body, dx, dy, SIZE, SIZE);
+      ctx.restore();
+
+      if (DEBUG) {
+        ctx.font = '13px Consolas, monospace';
+        ctx.fillStyle = 'rgba(0,0,0,.75)';
+        ctx.fillRect(0, 0, 420, 22);
+        ctx.fillStyle = '#7CFC00';
+        ctx.fillText(
+          `HOST=${HOST ? 'yes' : 'NO'} cursor=${cursor.on ? `${cursor.x | 0},${cursor.y | 0}` : 'off'}`
+          + ` pet=${pet.x | 0},${pet.y | 0} inter=${interactive ? 'ON' : 'off'} mode=${pet.mode} anim=${pet.anim}`
+          + ` img=${(assets[f.body]?.naturalWidth || 0)}x${(assets[f.body]?.naturalHeight || 0)}`,
+          8, 15,
+        );
+      }
+    }
+
+    // ---------------- 交互 ----------------
+    let clickTimer = 0;
+
+    window.addEventListener('click', (e) => {
+      if (menu.classList.contains('show')) return;
+      if (!onPet(e.clientX, e.clientY)) return;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => { openChat(); }, CLICK_DELAY);
+    });
+
+    window.addEventListener('dblclick', (e) => {
+      if (!onPet(e.clientX, e.clientY)) return;
+      clearTimeout(clickTimer);
+      triggerHit();
+    });
+
+    window.addEventListener('contextmenu', (e) => {
+      if (!onPet(e.clientX, e.clientY)) return;
+      e.preventDefault();
+      clearTimeout(clickTimer);
+      menu.style.left = Math.min(e.clientX, W - 160) + 'px';
+      menu.style.top = Math.min(e.clientY, H - 140) + 'px';
+      menu.classList.add('show');
+      syncInteractive();
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (!menu.contains(e.target)) menu.classList.remove('show');
+    });
+
+    menu.querySelectorAll('.menu-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const action = item.dataset.action;
+        menu.classList.remove('show');
+        if (action === 'chat') openChat();
+        else if (action === 'calm') { pet.calm = !pet.calm; }
+        else if (action === 'wander') { pet.mode = 'wander'; pickTarget(performance.now()); }
+        else if (action === 'hide') { HOST ? HOST.hide() : window.close(); }
+        else if (action === 'exit') { HOST ? HOST.hide() : window.close(); }
+      });
+    });
+
+    function triggerHit() {
+      if (pet.mode === 'hit') return;
+      // 随机朝左或朝右被打飞
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      pet.mode = 'hit';
+      pet.anim = 'hit';
+      pet.frame = 0; pet.frameTick = 0;
+      pet.hitUntil = performance.now() + 780;
+      pet.facing = dir;
+      pet.vx = dir * 12;
+      pet.vy = (Math.random() - 0.5) * 5;
+    }
+
+    function openChat() {
+      fetch('/elymes-api/open-chat', { method: 'POST' })
+        .then((r) => r.json())
+        .catch((err) => fail(`打开聊天窗口失败：${err}`));
+    }
+
+    // 给外部调试用：控制台里 __petState() 就能看到当前状态
+    window.__petState = () => ({
+      x: Math.round(pet.x), y: Math.round(pet.y),
+      mode: pet.mode, calm: pet.calm, anim: pet.anim,
+      cx: Math.round(cursor.x), cy: Math.round(cursor.y), cursorOn: cursor.on,
+      inter: interactive,
+      dist: cursor.on ? Math.round(Math.hypot(cursor.x - pet.x, cursor.y - pet.y)) : -1,
+    });
+
+    // ---------------- 设置（Edit 面板存的那份） ----------------
+    function applyConfig(cfg) {
+      if (!cfg || typeof cfg !== 'object') return;
+      const num = (v, lo, hi, dflt) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return dflt;
+        return Math.min(hi, Math.max(lo, n));
+      };
+      SIZE = Math.round(num(cfg.size, 24, 200, SIZE));
+      AVOID_IN = Math.round(num(cfg.avoidIn, 20, 600, AVOID_IN));
+      AVOID_OUT = Math.round(num(cfg.avoidOut, AVOID_IN + 10, 900, AVOID_OUT));
+      SPEED = num(cfg.speed, 0.3, 3, SPEED);
+      REST_ON = cfg.rest !== false;
+      REST_MS_MIN = Math.round(num(cfg.restMsMin, 800, 60000, REST_MS_MIN));
+      REST_MS_MAX = Math.round(num(cfg.restMsMax, REST_MS_MIN + 500, 120000, REST_MS_MAX));
+      REST_GAP_MIN = Math.round(num(cfg.restGapMin, 1000, 600000, REST_GAP_MIN));
+      REST_GAP_MAX = Math.round(num(cfg.restGapMax, REST_GAP_MIN + 1000, 1200000, REST_GAP_MAX));
+      // 角色变大了就把它拉回画面里，免得半截贴在边上
+      const edge = SIZE * 0.5 + 6;
+      pet.x = Math.max(edge, Math.min(W - edge, pet.x));
+      pet.y = Math.max(edge, Math.min(H - edge, pet.y));
+    }
+
+    async function loadConfig() {
+      try {
+        const r = await fetch('/elymes-api/pet-config', { cache: 'no-store' });
+        const d = await r.json();
+        if (d && d.config) applyConfig(d.config);
+      } catch { /* 读不到就用默认值 */ }
+    }
+
+    /** 设置面板一保存，服务端就往这条流上推一份新的，不用等轮询。 */
+    function watchConfig() {
+      let ws = null;
+      const connect = () => {
+        try {
+          ws = new WebSocket(`ws://${location.host}/ws/ctl`);
+        } catch { return; }
+        ws.addEventListener('message', (ev) => {
+          let f = null;
+          try { f = JSON.parse(ev.data); } catch { return; }
+          if (f && f.petConfig) applyConfig(f.petConfig);
+        });
+        ws.addEventListener('close', () => setTimeout(connect, 3000));
+        ws.addEventListener('error', () => { /* close 里会重连 */ });
+      };
+      connect();
+    }
+
+    // ---------------- 起飞 ----------------
+    resize();
+    window.addEventListener('resize', resize);
+    pickTarget(performance.now());
+    void loadConfig();
+    watchConfig();
+    loadAll.then(() => requestAnimationFrame(frame));
+  </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>在网页上与曳尔沐聊天</title>
+<link rel="stylesheet" href="/window/window.css">
+</head>
+<body>
+<div class="win" id="win">
+  <div class="titlebar">
+    <span class="tb-icon"></span>
+    <span class="tb-text" id="tb-text">正在与 ... 聊天......</span>
+    <span class="tb-btns">
+      <button class="tb-btn tb-min" id="btn-min" title="最小化"></button>
+      <button class="tb-btn tb-max" id="btn-max" title="最大化"></button>
+      <button class="tb-btn tb-close" id="btn-close" title="关闭"></button>
+    </span>
+  </div>
+
+  <div class="menubar">
+    <div class="menu" data-go="live"><button><u>F</u>ile</button></div>
+    <div class="menu" data-go="settings"><button><u>E</u>dit</button></div>
+    <div class="menu" data-go="world"><button><u>V</u>iew</button></div>
+    <div class="menu" data-go="help"><button><u>H</u>elp</button></div>
+    <span class="menu-spacer"></span>
+    <span class="net" id="net">○ 未连接</span>
+  </div>
+
+  <div class="body" id="body">
+    <!-- File：普通对话区 -->
+    <section class="panel on" id="panel-live">
+      <div class="chat" id="chat"></div>
+      <div class="portrait" id="portrait">
+        <img id="portrait-img" alt="">
+      </div>
+    </section>
+
+    <!-- Edit：桌宠设置 -->
+    <section class="panel" id="panel-settings">
+      <div class="sheet">
+        <h2 class="sheet-h">桌宠设置</h2>
+
+        <div class="field">
+          <span class="field-k">角色大小</span>
+          <div class="seg" data-key="size">
+            <button data-val="60">60 px</button>
+            <button data-val="75">75 px</button>
+            <button data-val="90">90 px</button>
+            <button data-val="120">120 px</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-k">躲避距离</span>
+          <div class="seg" data-key="avoidIn">
+            <button data-val="90">近</button>
+            <button data-val="130">中</button>
+            <button data-val="200">远</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-k">飞行速度</span>
+          <div class="seg" data-key="speed">
+            <button data-val="0.6">慢</button>
+            <button data-val="1">中</button>
+            <button data-val="1.6">快</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-k">安静时间</span>
+          <label class="check">
+            <input type="checkbox" id="set-rest">
+            <span>不要一直飞，隔一阵停下来歇一歇</span>
+          </label>
+        </div>
+
+        <div class="sheet-foot">
+          <button class="btn" id="set-save">保存</button>
+          <button class="btn" id="set-reset">恢复默认</button>
+          <span class="hint" id="set-hint"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- View：插件与市场 -->
+    <section class="panel" id="panel-world">
+      <div class="sheet">
+        <h2 class="sheet-h">插件</h2>
+        <div class="sublabel">已安装</div>
+        <div class="list" id="world-list"><div class="hint">读取中…</div></div>
+        <div class="soon">
+          <div class="soon-t">插件市场</div>
+          <div class="soon-s">还在路上，先把位置留着。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Help：接入 / 人格记忆 / 诊断 -->
+    <section class="panel" id="panel-help">
+      <div class="sheet">
+        <div class="tabs" id="help-tabs">
+          <button class="tab on" data-tab="conn">接入</button>
+          <button class="tab" data-tab="persona">人格记忆</button>
+          <button class="tab" data-tab="diag">诊断</button>
+        </div>
+
+        <div class="tabbody on" id="tab-conn">
+          <div class="hint">读取中…</div>
+        </div>
+
+        <div class="tabbody" id="tab-persona">
+          <div class="rowbar">
+            <span class="hint" id="persona-path"></span>
+            <button class="btn" id="persona-reload">重新读</button>
+            <button class="btn" id="persona-save">保存</button>
+          </div>
+          <textarea id="persona-text" spellcheck="false" placeholder="读取中…"></textarea>
+          <div class="hint" id="persona-hint"></div>
+        </div>
+
+        <div class="tabbody" id="tab-diag">
+          <div class="rowbar">
+            <button class="btn" id="diag-refresh">重新检查</button>
+            <span class="hint" id="diag-hint"></span>
+          </div>
+          <pre class="log" id="diag-log">读取中…</pre>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="embar" id="embar">
+    <button class="embtn" data-emo="face">☺</button>
+    <button class="embtn" data-emo="img">🖼</button>
+    <button class="embtn" data-emo="case">A</button>
+    <button class="embtn" data-emo="gem">💎</button>
+    <div class="emojis" id="emojis"></div>
+  </div>
+
+  <div class="composer">
+    <textarea id="input" placeholder="输入消息..."></textarea>
+    <button id="send">发送</button>
+  </div>
+</div>
+
+<script type="module" src="/window/window.js"></script>
+</body>
+</html>

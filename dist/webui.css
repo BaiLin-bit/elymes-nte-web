@@ -1,0 +1,172 @@
+/**
+ * 在网页上与曳尔沐聊天 · 面板样式
+ * ==========================
+ * 只负责「世界与插件」里的设置面板。
+ *
+ * 这里刻意不写任何作用在宿主 DOM 上的选择器（#rail / #kernel-root / .liveview 等）：
+ * 以前的版本把整个 WebUI 盖成 QQ2007，结果叠了两层——宿主是 JS 生成 DOM + Tailwind
+ * 原子类，盖不干净。现在真正的界面在独立窗口里（tools/window/），这份 CSS 只管面板。
+ */
+
+:root {
+  --mln-face: 'Poxiao Pixel CN 12', 'Fusion Pixel', 'MS Sans Serif', 'Tahoma', 'SimSun', monospace;
+  --mln-ink: #1d1d3a;
+  --mln-ink-soft: #4b4880;
+  --mln-win-2: #ebe9fb;
+}
+
+.mln-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  font-family: var(--mln-face);
+  font-size: 13px;
+  color: var(--mln-ink);
+  background: var(--mln-win-2);
+  border: 1px solid #4a4880;
+  box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #9c9ac2;
+}
+
+.mln-panel h3 {
+  margin: 0;
+  padding: 3px 6px;
+  font-size: 13px;
+  font-weight: normal;
+  background: linear-gradient(180deg, #a7a5e6, #8f8dd8);
+  color: #fff;
+  text-shadow: 1px 1px 0 rgba(20, 20, 60, .7);
+}
+
+/* ── 表单 ─────────────────────────────────────────────── */
+.mln-panel-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: start;
+  gap: 6px;
+}
+
+.mln-panel-row > span {
+  color: var(--mln-ink-soft);
+  padding-top: 3px;
+}
+
+.mln-panel input[type='text'],
+.mln-panel input[type='number'],
+.mln-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 5px;
+  font-family: var(--mln-face);
+  font-size: 13px;
+  color: var(--mln-ink);
+  background: #fff;
+  border: 1px solid #8f8dbb;
+  box-shadow: inset 1px 1px 0 #d6d4ea;
+}
+
+.mln-panel textarea {
+  min-height: 48px;
+  resize: vertical;
+}
+
+.mln-panel input[type='checkbox'] {
+  accent-color: #7b79d6;
+}
+
+.mln-panel button {
+  padding: 3px 10px;
+  font-family: var(--mln-face);
+  font-size: 13px;
+  color: #1d1d3a;
+  background: linear-gradient(#fdfdff, #cccae6);
+  border: 1px solid #fff;
+  box-shadow: inset -1px -1px 0 #6d6b9c, inset 1px 1px 0 #fff, 0 0 0 1px #4a4880;
+  cursor: pointer;
+}
+
+.mln-panel button:hover {
+  background: linear-gradient(#ffffff, #dedcf4);
+}
+
+.mln-panel button:active {
+  box-shadow: inset 1px 1px 0 #6d6b9c, inset -1px -1px 0 #fff, 0 0 0 1px #4a4880;
+}
+
+.mln-panel button:disabled {
+  color: #8a88a8;
+  cursor: default;
+}
+
+.mln-panel-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mln-panel-hint {
+  color: var(--mln-ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ── 导入立绘 ─────────────────────────────────────────── */
+.mln-import-box {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--mln-line-2);
+  background: var(--mln-win-2);
+}
+
+.mln-import-face,
+.mln-import-newname {
+  min-width: 160px;
+}
+
+.mln-import-files {
+  flex: 1;
+  min-width: 180px;
+}
+
+.mln-import-box [hidden] {
+  display: none !important;
+}
+
+.mln-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── 动作列表 ─────────────────────────────────────────── */
+.mln-face-list {
+  display: grid;
+  gap: 6px;
+}
+
+.mln-face-item {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px;
+  background: #f7f6ff;
+  border: 1px solid #c4c2e0;
+}
+
+.mln-face-item > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.mln-face-item img {
+  width: 72px;
+  height: 88px;
+  object-fit: cover;
+  object-position: 50% 10%;
+  image-rendering: pixelated;
+  border: 1px solid #8f8dbb;
+  background: #e7e5fa;
+}

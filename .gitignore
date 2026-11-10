@@ -1,0 +1,28 @@
+node_modules/
+*.log
+tools/ws.log
+
+# 运行时写入的本地配置（桌宠尺寸、速度等），不该提交
+state/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# 备份与临时
+*.tgz
+*.bak
+*.bak-*
+*.tmp
+*.tmp-*
+_task-*.mjs
+_rename*.mjs
+_fix*.mjs
+_sync*.mjs
+_probe*.mjs
+_verify*.mjs
+_test*.mjs
+*.orig

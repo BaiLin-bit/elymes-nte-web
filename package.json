@@ -1,0 +1,71 @@
+{
+  "name": "elymes-nte-web",
+  "version": "0.1.0",
+  "description": "在网页上与曳尔沐聊天：把聊天页做成 QQ2007 / Windows 98 复古窗口，右侧像素立绘伪插帧、表情随关键词切换，并附带一只透明桌宠。",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/index.mjs",
+    "dist",
+    "assets",
+    "tools/build.mjs",
+    "tools/webui.source.js",
+    "tools/window-server.mjs",
+    "tools/window",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "keywords": [
+    "coopanion",
+    "cortico",
+    "cortico-world",
+    "chat-ui",
+    "retro",
+    "qq2007",
+    "windows98",
+    "pixel-art",
+    "desktop-pet",
+    "elymes"
+  ],
+  "author": "曳尔沐",
+  "license": "MIT",
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "在网页上与曳尔沐聊天",
+    "locales": {
+      "zh": {
+        "displayName": "在网页上与曳尔沐聊天",
+        "description": "把聊天页重绘成 QQ2007 / Windows 98 复古窗口，右侧像素立绘随关键词换表情，另附一只可拖动的透明桌宠。"
+      },
+      "en": {
+        "displayName": "Chat with Elymes on the Web",
+        "description": "Redraws the Coopanion chat into a QQ2007 / Windows 98 retro skin, with a pixel portrait that reacts to keywords and a draggable desktop pet."
+      }
+    },
+    "icon": "assets/icon.png",
+    "screenshots": [
+      "assets/screenshot.png"
+    ],
+    "tags": [
+      "coopanion",
+      "companion",
+      "browser",
+      "local",
+      "internal-state",
+      "experimental"
+    ],
+    "webUiClient": "dist/webui.js",
+    "webUiStyle": "dist/webui.css"
+  }
+}
