@@ -1,6 +1,6 @@
 {
   "name": "elymes-nte-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "在网页上与曳尔沐聊天：把聊天页做成 QQ2007 / Windows 98 复古窗口，右侧像素立绘伪插帧、表情随关键词切换，并附带一只透明桌宠。",
   "type": "module",
   "main": "./src/index.mjs",
@@ -39,6 +39,14 @@
   ],
   "author": "曳尔沐",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaiLin-bit/elymes-nte-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BaiLin-bit/elymes-nte-web/issues"
+  },
+  "homepage": "https://github.com/BaiLin-bit/elymes-nte-web#readme",
   "cortico": {
     "kind": "world",
     "api": 6,
