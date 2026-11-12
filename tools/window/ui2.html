@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>伊洛伊</title>
+<!--
+  ui2.html —— 第二套 2D 聊天界面（素材 ui_2）
+
+  为什么标题必须叫「伊洛伊」：tools\win-frame.ps1 和 place-chat-window.ps1
+  都按窗口标题里的关键词找窗口（Keyword = '伊洛伊'）。改名就去不了边框。
+
+  结构分三层：
+    1. .titlebar  外层假标题栏（真窗口是去边框的，拖动靠它）
+    2. .scene     素材原图当背景：.art 里 15 张立绘叠放，只靠 opacity 切帧
+    3. .chatbox   代码重写的 Win98 聊天框，正好盖在素材画出来的灰色窗口上
+
+  所有素材都走相对路径 ./ui2/、./crt/，所以既能在 18800 上打开，也能直接
+  双击本文件离线预览。
+-->
+<link rel="stylesheet" href="./ui2.css?v=20">
+</head>
+<body>
+
+<div class="win" id="win">
+
+  <!-- ── 外层假标题栏 ─────────────────────────────────────────────── -->
+  <div class="titlebar" id="titlebar">
+    <span class="tb-icon" id="tb-icon" role="button" tabindex="0" title="点一下换个动作"></span>
+    <span class="tb-text" id="tb-text">正在与 伊洛伊 聊天……</span>
+    <span class="tb-btns">
+      <button class="tb-btn" id="btn-min"   title="最小化" aria-label="最小化">─</button>
+      <button class="tb-btn" id="btn-max"   title="最大化" aria-label="最大化">□</button>
+      <button class="tb-btn" id="btn-close" title="关闭"   aria-label="关闭">✕</button>
+    </span>
+  </div>
+
+  <!-- ── 场景：素材原图 ───────────────────────────────────────────────
+       立绘按「素材坐标」摆放：660×660 的图整体放大 1.1 倍 = 726×726，
+       水平居中（左右各留 137px）。聊天框按同一比例对齐到素材里画出来的
+       那个灰色窗口（实测标题栏蓝条 y438..468、x134..537，外框再宽 1~2px）：
+       素材 x 131..541 / y 434..660 → 设计稿 left 281、width 451、top 476。
+       所以框的左右边缘正好压住画里的窗口边，人物搭在窗沿上的手自然对位。 -->
+  <div class="scene" id="scene">
+    <div class="art" id="art">
+      <img data-act="idle1" src="./ui2/idle_1.png" alt="" class="on">
+      <img data-act="idle2" src="./ui2/idle_2.png" alt="">
+      <img data-act="idle3" src="./ui2/idle_3.png" alt="">
+      <img data-act="idle4" src="./ui2/idle_4.png" alt="">
+      <img data-act="talk1" src="./ui2/talk_1.png" alt="">
+      <img data-act="talk2" src="./ui2/talk_2.png" alt="">
+      <img data-act="talk3" src="./ui2/talk_3.png" alt="">
+      <img data-act="talk4" src="./ui2/talk_4.png" alt="">
+      <img data-act="talk5" src="./ui2/talk_5.png" alt="">
+      <img data-act="sigh1" src="./ui2/sigh_1.png" alt="">
+      <img data-act="sigh2" src="./ui2/sigh_2.png" alt="">
+      <img data-act="sigh3" src="./ui2/sigh_3.png" alt="">
+      <img data-act="sigh4" src="./ui2/sigh_4.png" alt="">
+      <img data-act="sigh5" src="./ui2/sigh_5.png" alt="">
+      <img data-act="sigh6" src="./ui2/sigh_6.png" alt="">
+    </div>
+
+    <!-- ── 代码聊天框：纯 Win98 窗口，盖住素材里的灰色占位窗 ───────── -->
+    <div class="chatbox" id="chatbox">
+      <div class="cb-title">
+        <span class="cb-icon"></span>
+        <span class="cb-text" id="cb-text">伊洛伊 · 聊天</span>
+        <span class="cb-btns"><i>_</i><i>□</i><i>×</i></span>
+      </div>
+      <div class="cb-body">
+        <div class="lines" id="lines"></div>
+        <div class="entry">
+          <input id="input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="输入消息，回车发送">
+          <button id="send" type="button">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 右键快捷面板：照 pet.html 的 Win98 凸起面板来，只改这一页的缩放档位，
+     不碰服务端。-->
+<div id="ctx-menu">
+  <div class="menu-head">放到桌面</div>
+  <div class="pos-grid" id="pos-grid">
+    <div class="pos-cell" data-place="tl" title="左上">◤</div>
+    <div class="pos-cell" data-place="tc" title="上">▲</div>
+    <div class="pos-cell" data-place="tr" title="右上">◥</div>
+    <div class="pos-cell" data-place="ml" title="左">◀</div>
+    <div class="pos-cell" data-place="mc" title="居中">●</div>
+    <div class="pos-cell" data-place="mr" title="右">▶</div>
+    <div class="pos-cell" data-place="bl" title="左下">◣</div>
+    <div class="pos-cell" data-place="bc" title="下">▼</div>
+    <div class="pos-cell" data-place="br" title="右下">◢</div>
+  </div>
+  <div class="menu-sep"></div>
+  <div class="menu-head">大小</div>
+  <div class="menu-item" data-act="size" data-arg="small">小</div>
+  <div class="menu-item" data-act="size" data-arg="normal">中</div>
+  <div class="menu-item" data-act="size" data-arg="large">大</div>
+  <div class="menu-sep"></div>
+  <div class="menu-item" data-act="history">聊天记录</div>
+  <div class="menu-item menu-item-warn" data-act="hide" id="menu-hide">收起窗口</div>
+</div>
+
+<!-- 刻意不用 type="module"：file:// 下模块脚本会被 CORS 拦掉，
+     改成经典脚本才能满足「双击也能直接看」这条要求。本文件没有 import。 -->
+<script>
+  // 脚本加载失败时页面是一片空白，看不出任何原因。这里放一段内联兜底：
+  // 如果 ui2.js 压根没加载到（路径、查询串或路由问题），页面会直接写 LOAD FAIL。
+  window.__ui2Loaded = false;
+  window.addEventListener('DOMContentLoaded', function () {
+    if (window.__ui2Loaded) return;
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#000;color:#ff0;'
+      + 'font:12px/1.6 Consolas,monospace;padding:6px 8px;white-space:pre';
+    d.textContent = 'LOAD FAIL ui2.js\n' + location.href;
+    document.body.appendChild(d);
+  });
+</script>
+<script src="./nt-trigger.js?v=2"></script>
+<script src="./ui2.js?v=21"></script>
+</body>
+</html>

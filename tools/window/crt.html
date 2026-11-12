@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>伊洛伊</title>
+<!--
+  为什么标题要写「伊洛伊」：tools\place-chat-window.ps1 和新的
+  win-frame.ps1 都是靠窗口标题里的关键词找窗口的（Keyword = '伊洛伊'）。
+  改成别的字，去边框和摆位就全失效了。
+
+  页面结构：标题栏 / 人物台 / 对话框 / 底栏，四层纵向排列。
+  所有图片路径都在 /window/crt/ 下，由 18800 的静态路由直接服务。
+-->
+<link rel="stylesheet" href="/window/crt.css?v=4">
+</head>
+<body>
+
+<!-- data-win-title 只是给 JS 读的，真正显示在标题栏里的文字在 .tb-text -->
+<div class="win" id="win">
+
+  <!-- ── 标题栏 ───────────────────────────────────────────────────────
+       三个按钮不是装饰：点它们会调本地接口去控制真实窗口（最小化 /
+       最大化 / 关闭），见 crt.js 的 winCtl()。                      -->
+  <div class="titlebar" id="titlebar">
+    <span class="tb-icon"></span>
+    <span class="tb-glyph">Y</span>
+    <span class="tb-text" id="tb-text">正在与 伊洛伊 聊天……</span>
+    <span class="tb-btns">
+      <button class="tb-btn tb-min"   id="btn-min"   title="最小化" aria-label="最小化">─</button>
+      <button class="tb-btn tb-max"   id="btn-max"   title="最大化" aria-label="最大化">□</button>
+      <button class="tb-btn tb-close" id="btn-close" title="关闭"   aria-label="关闭">✕</button>
+    </span>
+  </div>
+
+  <!-- ── 人物台 ─────────────────────────────────────────────────────── -->
+  <div class="stage" id="stage">
+
+    <!-- 录制标记 + 五颗心（心上来的就是 心_左上角.png，不重画） -->
+    <div class="rec">
+      <span id="clock">19:30</span>
+      <span class="rec-dot"></span>
+      <span>REC</span>
+    </div>
+    <img class="hearts" src="/window/crt/detail/心_左上角.png" alt="">
+
+    <!-- 右上两张卡：上面是像素头像卡（自带蝴蝶结），下面是故障面板。
+         素材不包含的部分（紫边框）用 CSS 补，但这里素材本身已经带边，
+         所以直接贴，不额外加框，避免双重描边。 -->
+    <div class="side">
+      <img class="card"   src="/window/crt/detail/吐司 裁剪.png" alt="">
+      <img class="glitch" src="/window/crt/detail/note.png" alt="">
+    </div>
+
+    <!-- 人物：10 张立绘全叠在同一位置，只靠 .on 切透明度。
+         这样换动作时不会闪一下白（新图未加载完）。首帧加载后一直留在内存里。 -->
+    <div class="person" id="person">
+      <img data-act="cross"  src="/window/crt/y/抱肘_沉着脸.png"   alt="">
+      <img data-act="hug1"   src="/window/crt/y/抱肘_说话_1.png"   alt="">
+      <img data-act="hug2"   src="/window/crt/y/抱肘_说话_2.png"   alt="">
+      <img data-act="pull"   src="/window/crt/y/推or拉窗口.png"     alt="">
+      <img data-act="teach1" src="/window/crt/y/教导_1.png"        alt="">
+      <img data-act="teach2" src="/window/crt/y/教导_2.png"        alt="">
+      <img data-act="sad1"   src="/window/crt/y/教导_烦闷_1.png"   alt="">
+      <img data-act="sad2"   src="/window/crt/y/教导_烦闷_2.png"   alt="">
+      <img data-act="say1"   src="/window/crt/y/说话_1.png"        alt="" class="on">
+      <img data-act="say2"   src="/window/crt/y/说话_2.png"        alt="">
+    </div>
+
+    <!-- 指导态特效：兔头 + 四颗星芒。默认 opacity:0，加 .guide 才出现。 -->
+    <img class="fx fx-rabbit" src="/window/crt/detail/兔头.png"   alt="">
+    <img class="fx fx-s1"     src="/window/crt/detail/星星_3.png" alt="">
+    <img class="fx fx-s2"     src="/window/crt/detail/星星_1.png" alt="">
+    <img class="fx fx-s3"     src="/window/crt/detail/星星_2.png" alt="">
+    <img class="fx fx-s4"     src="/window/crt/detail/星星_4.png" alt="">
+
+  </div>
+
+  <!-- ── 对话框 ───────────────────────────────────────────────────────
+       标签文字 XXX-SPEAK 里的 XXX 取桌宠 id（默认 Y / 伊洛伊）。
+       JS 会把它设成「角色名-SPEAK」。                                  -->
+  <div class="dialog-wrap">
+    <div class="dialog">
+      <div class="tag">
+        <img class="tag-heart" src="/window/crt/detail/心_聊天框.png" alt="">
+        <span class="tag-plate" id="tag-plate">Y-SPEAK</span>
+      </div>
+
+      <!-- 对话正文。滚动条样式在 crt.css；Y 的最新一句逐字出现 -->
+      <div class="lines" id="lines"></div>
+
+      <!-- 输入行。图一里没有输入框（那是游戏对白窗），但这是真聊天窗，
+           必须能打字。用纸面里的一道虚线分隔，看起来像表格里的签名栏，
+           不额外加框，尽量避免把米黄纸面切碎。 -->
+      <div class="entry">
+        <span class="entry-mark">▶</span>
+        <input id="input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="输入消息，回车发送">
+        <button id="send" class="entry-send">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 底栏 ────────────────────────────────────────────────────────
+       喇叭素材当「重播」按钮用（点一下把最后一句再说一遍），
+       进度条是静态装饰，数字 80 是图一里就有的，保留。              -->
+  <div class="underbar">
+    <img class="ub-rewind" id="btn-replay" src="/window/crt/detail/喇叭.png" alt="重播" title="重播最后一句">
+    <div class="ub-meter"></div>
+    <span class="ub-num">80</span>
+    <span class="ub-track"></span>
+    <span class="ub-spacer"></span>
+    <span class="ub-slats"></span>
+  </div>
+
+</div>
+
+<script src="/window/nt-trigger.js?v=2"></script>
+<script type="module" src="/window/crt.js?v=3"></script>
+</body>
+</html>

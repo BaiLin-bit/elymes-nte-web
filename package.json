@@ -1,7 +1,7 @@
 {
   "name": "elymes-nte-web",
-  "version": "0.1.1",
-  "description": "在网页上与曳尔沐聊天：把聊天页做成 QQ2007 / Windows 98 复古窗口，右侧像素立绘伪插帧、表情随关键词切换，并附带一只透明桌宠。",
+  "version": "0.2.1",
+  "description": "和Y？聊天（曳尔沐对话）网页端插件：把聊天做成 QQ2007 / Windows 98 复古窗口与千禧风 CRT 窗口，右侧像素立绘伪插帧、表情随关键词切换，另带一只透明桌宠；包里附开发中遇到的问题.md，界面里还藏着一个和数字、正文原文有关的彩蛋。",
   "type": "module",
   "main": "./src/index.mjs",
   "exports": {
@@ -9,21 +9,21 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "src/index.mjs",
+    "src",
     "dist",
     "assets",
     "tools/build.mjs",
     "tools/webui.source.js",
     "tools/window-server.mjs",
+    "tools/win-frame.ps1",
+    "tools/nt-top.ps1",
     "tools/window",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "开发中遇到的问题.md"
   ],
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "ws": "^8.22.0"
   },
   "keywords": [
     "coopanion",
@@ -39,6 +39,9 @@
   ],
   "author": "曳尔沐",
   "license": "MIT",
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaiLin-bit/elymes-nte-web.git"
@@ -50,29 +53,7 @@
   "cortico": {
     "kind": "world",
     "api": 6,
-    "displayName": "在网页上与曳尔沐聊天",
-    "locales": {
-      "zh": {
-        "displayName": "在网页上与曳尔沐聊天",
-        "description": "把聊天页重绘成 QQ2007 / Windows 98 复古窗口，右侧像素立绘随关键词换表情，另附一只可拖动的透明桌宠。"
-      },
-      "en": {
-        "displayName": "Chat with Elymes on the Web",
-        "description": "Redraws the Coopanion chat into a QQ2007 / Windows 98 retro skin, with a pixel portrait that reacts to keywords and a draggable desktop pet."
-      }
-    },
-    "icon": "assets/icon.png",
-    "screenshots": [
-      "assets/screenshot.png"
-    ],
-    "tags": [
-      "coopanion",
-      "companion",
-      "browser",
-      "local",
-      "internal-state",
-      "experimental"
-    ],
+    "displayName": "和Y？聊天",
     "webUiClient": "dist/webui.js",
     "webUiStyle": "dist/webui.css"
   }

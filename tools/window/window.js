@@ -1,10 +1,9 @@
 /**
  * 窗口的页面逻辑。
  *
- * 两条 WebSocket：
- *   /ws/chat  —— 发消息（hello + msg），对应 Core 的 world:console/chat 面板流
- *   /ws/debug —— 收时间线，对应 Core 的 /ws/debug 调试通道
- * 两条都由本地服务转发，浏览器这边不碰 Core 端口。
+ * 一条 WebSocket：
+ *   /ws/pet —— Core 的 world:desktop-pet 对话面板（气泡通道），历史与收发都在这里
+ * 由本地 18800 服务转发，浏览器这边不碰 Core 端口。
  */
 const WS = (p) => `ws://${location.host}${p}`;
 
@@ -22,8 +21,7 @@ const KAOMOJI = ['(・ω・)', '(ﾉ≧∀≦)ﾉ', '(￣▽￣)', '(´・ω・`
 const state = {
   chat: null,
   debug: null,
-  chatOpen: false,
-  debugOpen: false,
+  petOpen: false,
   frames: 0,
   dbgNote: '待',
   hello: null,
@@ -34,11 +32,10 @@ const state = {
 };
 
 // ── 渲染 ────────────────────────────────────────────────
-function textOf(item) {
-  return (item.content || [])
-    .map((c) => (c && typeof c.text === 'string' ? c.text : ''))
-    .join('')
-    .trim();
+function cleanText(s) {
+  const t = String(s || '').trim();
+  if (!t || t.length > 1200) return '';
+  return t;
 }
 
 /**
@@ -64,51 +61,38 @@ function isNoise(text, role) {
   return text.length > 1200;
 }
 
-/** TA 说的话藏在这两个工具的入参里，message 里没有 assistant 文本。 */
-const SAY_TOOLS = { pet_say: 'script', bottle_reply: 'text' };
-
 /**
- * 一条时间线记录能变成聊天行的，只有两种：
- * 1. 用户消息（要滤掉系统注入）；
- * 2. pet_say / bottle_reply 的调用参数——模型"说出口"的话。
- * function_call_output、reasoning 这些不是对话，直接跳过。
+ * 桌宠对话面板里能变成聊天行的条目只有两种：
+ * 1. kind:'user' —— 人说的话（via: bubble 气泡框 / chat 对话页 / voice 语音）；
+ * 2. kind:'say'  —— 她「说出口」的话，beats 里每段算一句。
+ * ask（提问）/ touch（摸头）/ figure（换装）/ activity（工具流水）不是对话，跳过。
  */
-function rowFromItem(item, lastAt) {
-  if (!item) return null;
-  if (item.type === 'message') {
-    const role = item.role || 'assistant';
-    if (role === 'system') return null;
-    const text = textOf(item);
-    if (!text || isNoise(text, role)) return null;
-    return { role, text, id: item.id || '', at: item.created_at || item.createdAt || lastAt || '' };
-  }
-  if (item.type === 'function_call') {
-    const field = SAY_TOOLS[item.name];
-    if (!field) return null;
-    let args = item.arguments;
-    if (typeof args === 'string') {
-      try { args = JSON.parse(args); } catch { return null; }
-    }
-    const text = args && typeof args[field] === 'string' ? args[field].trim() : '';
-    if (!text) return null;
-    return { role: 'assistant', text, id: item.id || '', at: lastAt || '' };
-  }
-  return null;
-}
-
-function rowsFromSession(session) {
+function rowsFromItems(items) {
   const rows = [];
-  let lastAt = '';
-  for (const entry of session || []) {
-    const item = entry && entry.item ? entry.item : entry;
+  for (const item of items || []) {
     if (!item) continue;
-    if (item.created_at || item.createdAt) lastAt = item.created_at || item.createdAt;
-    const row = rowFromItem(item, lastAt);
-    if (!row) continue;
-    if (row.id) state.seen.add(row.id);
-    rows.push(row);
+    const at = item.ts || item.at || '';
+    if (item.kind === 'user') {
+      const text = cleanText(item.text);
+      if (text) rows.push({ role: 'user', text, at });
+    } else if (item.kind === 'say') {
+      for (const b of Array.isArray(item.beats) ? item.beats : []) {
+        const text = cleanText(b && b.text);
+        if (text) rows.push({ role: 'assistant', text, at });
+      }
+    }
   }
   return rows;
+}
+
+/* 历史回填上限：控制台风这扇窗可以多回一点，2d/复古风那两个只回 5 条。 */
+const BACKFILL = 40;
+
+function backfillRows(rows) {
+  const shown = rows.slice(-BACKFILL);
+  state.said.clear();
+  for (const r of shown) state.said.add(r.text);
+  rebuild(shown);   // rebuild 只在最后滚一次，不会逐行刷屏
 }
 
 function fmtTime(at) {
@@ -172,10 +156,8 @@ function rebuild(rows) {
 
 // ── 状态显示 ────────────────────────────────────────────
 function paintNet() {
-  const both = state.chatOpen && state.debugOpen;
-  const any = state.chatOpen || state.debugOpen;
-  netEl.className = 'net' + (both ? ' on' : any ? '' : ' bad');
-  netEl.textContent = `${both ? '●' : '○'} ${state.chatOpen ? '发' : '—'}/${state.debugOpen ? '收' : '—'} · ${state.frames} · ${state.dbgNote}`;
+  netEl.className = 'net' + (state.petOpen ? ' on' : ' bad');
+  netEl.textContent = (state.petOpen ? '●' : '○') + ' 气泡 · ' + state.frames + ' · ' + state.dbgNote;
 }
 
 // ── 页面标题的名字 ──────────────────────────────────────
@@ -193,44 +175,81 @@ async function loadName() {
   tbText.textContent = '正在与 TA 聊天......';
 }
 
-// ── chat 通道：只负责发 ─────────────────────────────────
-function openChat() {
-  const ws = new WebSocket(WS('/ws/chat'));
-  state.chat = ws;
+// ── 气泡通道：桌宠对话面板，收发都在这条上 ──────────────
+function applyPetFrame(f) {
+  const t = f && f.t;
+  if (t === 'init') {
+    state.said.clear();
+    state.selfText.clear();
+    backfillRows(rowsFromItems(f.items));
+    clearTimeout(faceTimer);
+    face = 'look';
+    faceIdx = 0;
+    paintFace();
+    return 'init:' + (Array.isArray(f.items) ? f.items.length : '?');
+  }
+  if (t === 'item') return showItem(f.item);
+  if (t === 'older') return 'older';
+  if (t === 'rejected') {
+    appendRow('assistant', String(f.reason || '（这条没发出去）'), '');
+    return 'rejected';
+  }
+  if (t === 'notice' && typeof f.text === 'string') { appendRow('assistant', f.text, ''); return 'notice'; }
+  // sent / withdrawn / settled / phase / ask / paused / bot / activity / draft：与本框无关
+  return t || 'other';
+}
+
+function showItem(item) {
+  const rows = rowsFromItems([item]);
+  let shown = 'skip';
+  for (const r of rows) {
+    if (r.role === 'user') {
+      // 自己刚发的会在面板回显一次，认掉它，别出现两行
+      if (state.selfText.has(r.text)) { state.selfText.delete(r.text); shown = 'echo'; continue; }
+      if (state.said.has(r.text)) continue;
+      state.said.add(r.text);
+      appendRow(r.role, r.text, r.at);
+      shown = 'user';
+      continue;
+    }
+    if (state.said.has(r.text)) continue;
+    state.said.add(r.text);
+    appendRow(r.role, r.text, r.at);
+    clearTimeout(thinkTimer);
+    setFace(faceFor(r.text) || 'talk', 3200);
+    shown = 'say';
+  }
+  return shown;
+}
+
+function openPet() {
+  const ws = new WebSocket(WS('/ws/pet'));
+  state.pet = ws;
   ws.addEventListener('open', () => {
-    state.chatOpen = true;
-    ws.send(JSON.stringify({ type: 'hello', name: '控制台' }));
+    state.petOpen = true;
+    ws.send(JSON.stringify({ t: 'hello' }));   // 要历史就必须先 hello
     paintNet();
   });
   ws.addEventListener('message', (e) => {
     state.frames++;
-    paintNet();
     let f = null;
-    try { f = JSON.parse(e.data); } catch { return; }
-    if (f && f.type === 'sys' && typeof f.text === 'string') {
-      console.log('[chat sys]', f.kind || '', f.text);
-      return;
+    try { f = JSON.parse(e.data); } catch { state.dbgNote = 'badjson'; paintNet(); return; }
+    let kind = '?';
+    try {
+      kind = applyPetFrame(f);
+    } catch (err) {
+      kind = 'ERR:' + String((err && err.message) || err).slice(0, 40);
     }
-    // TA 的回话会直接出现在这条流上（{type:'msg', text}），
-    // 调试通道那帧是给控制台画时间线用的，窗口这边直接收这条最省事。
-    if (f && f.type === 'msg' && typeof f.text === 'string') {
-      const text = f.text.trim();
-      if (!text) return;
-      if (state.selfText.has(text)) { state.selfText.delete(text); return; }
-      if (state.said.has(text)) return;
-      state.said.add(text);
-      appendRow('assistant', text, new Date().toISOString());
-      clearTimeout(thinkTimer);
-      setFace(faceFor(text) || 'talk', 3200);
-    }
+    state.dbgNote = String(kind || '?').slice(0, 14);
+    paintNet();
   });
   ws.addEventListener('close', () => {
-    state.chatOpen = false;
+    state.petOpen = false;
     paintNet();
-    setTimeout(openChat, 2000);
+    setTimeout(openPet, 2000);
   });
   ws.addEventListener('error', () => {
-    state.chatOpen = false;
+    state.petOpen = false;
     paintNet();
   });
 }
@@ -250,91 +269,21 @@ function openCtl() {
   ws.addEventListener('error', () => { /* close 里会重连 */ });
 }
 
-// ── debug 通道：收时间线 ────────────────────────────────
-function applyFrame(f) {
-  const t = f && f.t;
-  if (t === 'hello') {
-    state.hello = f;
-    state.seen.clear();
-    state.said.clear();
-    const rows = rowsFromSession(f.session);
-    rebuild(rows);
-    clearTimeout(faceTimer);
-    face = 'look';
-    faceIdx = 0;
-    paintFace();
-    return 'hello:' + rows.length;
-  }
-  if (t === 'session.append') {
-    const rec = f.message || null;
-    const item = rec && rec.item ? rec.item : rec;
-    const row = rowFromItem(item);
-    if (!row) return 'append:skip';
-    if (row.id && state.seen.has(row.id)) return 'append:dup';
-    if (row.id) state.seen.add(row.id);
-    appendRow(row.role, row.text, row.at);
-    if (row.role !== 'user') {
-      clearTimeout(thinkTimer);
-      setFace(faceFor(row.text) || 'talk', 3200);
-    }
-    return 'append:' + row.role;
-  }
-  if (t === 'session.reset') {
-    state.seen.clear();
-    rebuild(rowsFromSession(f.messages));
-    return 'reset';
-  }
-  return t || 'other';
-}
-
-function openDebug() {
-  const ws = new WebSocket(WS('/ws/debug'));
-  state.debug = ws;
-  ws.addEventListener('open', () => {
-    state.debugOpen = true;
-    paintNet();
-  });
-  ws.addEventListener('message', (e) => {
-    state.frames++;
-    let f = null;
-    try { f = JSON.parse(e.data); } catch { state.dbgNote = 'badjson'; paintNet(); return; }
-    let kind = '?';
-    try {
-      kind = applyFrame(f);
-    } catch (err) {
-      kind = 'ERR:' + String((err && err.message) || err).slice(0, 40);
-    }
-    state.dbgNote = String(kind || '?').slice(0, 14);
-    paintNet();
-    // 先把认不出的帧记下来，后面照着补渲染
-    if (kind && kind !== 'hello' && Math.random() < 0.05) {
-      console.log('[debug frame]', kind, JSON.stringify(f).slice(0, 300));
-    }
-  });
-  ws.addEventListener('close', () => {
-    state.debugOpen = false;
-    paintNet();
-    setTimeout(openDebug, 2000);
-  });
-  ws.addEventListener('error', () => {
-    state.debugOpen = false;
-    paintNet();
-  });
-}
-
 // ── 发送 ────────────────────────────────────────────────
 function send() {
   const text = inputEl.value.trim();
   if (!text) return;
-  if (!state.chat || state.chat.readyState !== 1) {
+  if (!state.pet || state.pet.readyState !== 1) {
     appendRow('assistant', '（还没连上，稍等一下再试）', '');
     return;
   }
-  state.chat.send(JSON.stringify({ type: 'hello', name: '控制台' }));
-  state.chat.send(JSON.stringify({ type: 'msg', text }));
+  const id = 'win-' + Date.now().toString(36) + '-' + (sendSeq++);
+  state.pet.send(JSON.stringify({ t: 'send', id, text }));
   appendRow('user', text, '');
   state.selfText.add(text);
+  state.said.add(text);
   inputEl.value = '';
+  if (window.ntMaybeTrigger) window.ntMaybeTrigger(text);   // 关键词彩蛋（nt-trigger.js）
   inputEl.focus();
   // 发出去了就先摆出「在想」的样子，等 TA 回话再切成「在说」。
   setFace('think', 0);
@@ -343,6 +292,8 @@ function send() {
     if (face === 'think') setFace('look');
   }, 90000);
 }
+
+let sendSeq = 0;
 
 // ── 表情栏 ──────────────────────────────────────────────
 function mountEmojis() {
@@ -395,7 +346,9 @@ function mountTitlebar() {
     inputEl.selectionStart = inputEl.selectionEnd = 1;
   });
   $('btn-min').addEventListener('click', () => {
-    chatEl.scrollTop = chatEl.scrollHeight;
+    // 旧界面标题栏那个「─」：收起旧界面，切到千禧风窗口。
+    // 服务端 open-chat 会先清掉同配置目录的旧 Edge，所以旧窗会被一起收掉。
+    void openCrtWindow();
   });
   $('btn-max').addEventListener('click', () => {
     document.documentElement.requestFullscreen?.().catch(() => {});
@@ -534,6 +487,8 @@ function el(tag, cls, text) {
 function showPanel(name) {
   if (!PANELS.includes(name)) return;
   panelNow = name;
+  const win = $('win');
+  if (win) win.classList.toggle('live', name === 'live');
   for (const p of PANELS) {
     const box = document.getElementById(`panel-${p}`);
     if (box) box.classList.toggle('on', p === name);
@@ -578,6 +533,20 @@ function paintSettings() {
   });
   const rest = $('set-rest');
   if (rest) rest.checked = petCfg.rest !== false;
+  const follow = $('set-follow');
+  if (follow) follow.checked = petCfg.follow === true;
+  paintFollowState();
+}
+
+/** 跟随开着的时候，「躲避距离」和「安静时间」都不生效，置灰免得误会。 */
+function paintFollowState() {
+  const on = petCfg.follow === true;
+  const avoidSeg = document.querySelector('#panel-settings .seg[data-key="avoidIn"]');
+  if (avoidSeg) avoidSeg.querySelectorAll('button').forEach((b) => { b.disabled = on; });
+  const rest = $('set-rest');
+  if (rest) rest.disabled = on;
+  const hint = $('set-follow-hint');
+  if (hint) hint.textContent = on ? '跟随开着：躲避距离与安静时间此时不起作用' : '';
 }
 
 function mountSettings() {
@@ -597,9 +566,18 @@ function mountSettings() {
       if (hint) hint.textContent = '改过了，按保存才生效';
     });
   }
+  const follow = $('set-follow');
+  if (follow) {
+    follow.addEventListener('change', () => {
+      petCfg = { ...petCfg, follow: follow.checked };
+      paintFollowState();
+      const hint = $('set-hint');
+      if (hint) hint.textContent = '改过了，按保存才生效';
+    });
+  }
   $('set-save').addEventListener('click', () => void saveSettings());
   $('set-reset').addEventListener('click', () => {
-    petCfg = { size: 60, avoidIn: 130, avoidOut: 200, speed: 1, rest: true };
+    petCfg = { size: 60, avoidIn: 130, avoidOut: 200, speed: 1, follow: false, followRadius: 100, rest: true, roamIn: 60, roamOut: 260 };
     paintSettings();
     const hint = $('set-hint');
     if (hint) hint.textContent = '已恢复默认，按保存写下去';
@@ -613,6 +591,7 @@ async function saveSettings() {
     if (on) next[seg.dataset.key] = Number(on.dataset.val);
   });
   next.rest = $('set-rest').checked;
+  next.follow = $('set-follow').checked;
   const hint = $('set-hint');
   const btn = $('set-save');
   if (btn) btn.disabled = true;
@@ -679,11 +658,50 @@ function mountHelp() {
   $('persona-reload').addEventListener('click', () => void loadPersona());
   $('persona-save').addEventListener('click', () => void savePersona());
   $('diag-refresh').addEventListener('click', () => void loadDiag());
+  $('open-crt').addEventListener('click', () => void openCrtWindow());
+  $('open-ui2').addEventListener('click', () => void openUi2Window());
+}
+
+// 打开千禧风窗口：走服务端 /elymes-api/open-chat。
+// 服务端会先清掉同配置目录的旧 Edge 实例再拉起，所以这里不用自己关旧窗。
+async function openCrtWindow() {
+  const hint = $('open-crt-hint');
+  if (hint) hint.textContent = '正在打开…';
+  try {
+    const resp = await fetch('/elymes-api/open-chat', { method: 'POST' });
+    const out = await resp.json();
+    if (hint) {
+      hint.textContent = out && out.opened ? '已打开' : '服务端说没打开，检查端口 18800';
+    }
+  } catch (err) {
+    if (hint) hint.textContent = `打不开：${String((err && err.message) || err)}`;
+  }
+}
+
+// 打开 2D 素材版界面。这一页改走透明浮层（和桌宠同一条通道），不再开 Edge --app 窗：
+// --app 窗自己铺不透明底，页面里的 CSS 透明设置盖不过去。
+async function openUi2Window() {
+  const hint = $('open-ui2-hint');
+  if (hint) hint.textContent = '正在打开…';
+  try {
+    const resp = await fetch('/elymes-api/open-ui2', { method: 'POST' });
+    const out = await resp.json();
+    if (hint) {
+      const ok = out && (out.ok || out.opened);
+      const how = out && out.transparent ? '透明浮层' : '普通小窗';
+      hint.textContent = ok ? `已打开（${how}）` : `没打开：${(out && out.error) || '检查 18800 端口'}`;
+    }
+  } catch (err) {
+    if (hint) hint.textContent = `打不开：${String((err && err.message) || err)}`;
+  }
 }
 
 function loadHelpTab(name) {
   if (name === 'persona') return loadPersona();
   if (name === 'diag') return loadDiag();
+  if (name === 'tips') return;  // 操作技巧：纯静态说明，不拉数据
+  if (name === 'crt') return;   // 这一栏没有要拉的数据，只有一个按钮
+  if (name === 'ui2') return;   // 同上
   return loadConn();
 }
 
@@ -705,8 +723,7 @@ async function loadConn() {
   } catch { /* 下面按未知处理 */ }
 
   const rows = [];
-  rows.push(kv('说话通道', state.chatOpen ? '已连接' : '没连上', state.chatOpen ? 'ok' : 'bad'));
-  rows.push(kv('时间线通道', state.debugOpen ? '已连接' : '没连上', state.debugOpen ? 'ok' : 'bad'));
+  rows.push(kv('气泡通道', state.petOpen ? '已连接' : '没连上', state.petOpen ? 'ok' : 'bad'));
   rows.push(kv('本地服务', diag && diag.port ? `127.0.0.1:${diag.port}` : '未知'));
   rows.push(kv('Core 地址', (diag && diag.core) || '未知'));
 
@@ -721,6 +738,51 @@ async function loadConn() {
   }
 
   box.replaceChildren(...rows);
+  void mountNtSetting(box);
+}
+
+function mountNtSetting(box) {
+  const wrap = el('div', 'nt-set');
+  wrap.append(el('div', 'nt-set-title', '接入界面设置'));
+  const row = el('label', 'nt-set-row');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = true;
+  row.append(cb, el('span', '', '全屏彩蛋 10 秒自动退出'));
+  const hint = el('div', 'hint nt-set-hint', '读取中…');
+  wrap.append(row, hint);
+  box.append(wrap);
+
+  fetch('/elymes-api/nt-settings', { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((d) => {
+      if (d && typeof d.autoClose === 'boolean') cb.checked = d.autoClose;
+      hint.textContent = '关掉后，彩蛋会一直停留，直到按 Esc / 确定 / 点空白。';
+    })
+    .catch(() => {
+      hint.textContent = '读不到设置，先按默认（自动退出）。';
+    });
+
+  cb.addEventListener('change', async () => {
+    cb.disabled = true;
+    try {
+      const r = await fetch('/elymes-api/nt-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoClose: cb.checked }),
+      });
+      const d = await r.json();
+      if (!r.ok || (d && d.ok === false)) throw new Error((d && d.error) || '保存失败');
+      hint.textContent = cb.checked
+        ? '已开启：10 秒自动退出。'
+        : '已关闭：彩蛋会一直停留，按 Esc / 确定 / 点空白关闭。';
+    } catch (err) {
+      cb.checked = !cb.checked;
+      hint.textContent = `保存失败：${String((err && err.message) || err)}`;
+    } finally {
+      cb.disabled = false;
+    }
+  });
 }
 
 async function loadPersona() {
@@ -814,8 +876,7 @@ function boot() {
   portraitImg.src = '/assets/portrait/look_1.jpg';
   paintNet();
   void loadName();
-  openChat();
-  openDebug();
+  openPet();
   openCtl();
   tickPortrait();
 }

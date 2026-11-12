@@ -1,5 +1,5 @@
 /**
- * 在网页上与曳尔沐聊天 · WebUI 面板 bundle 的源码
+ * 千禧年复古外壳 · WebUI 面板 bundle 的源码
  * ==========================================
  * 这个文件不直接进 dist：`tools/build.mjs` 会把下面那行 ART 占位换成内联的 base64 图片
  * （立绘 + 桌宠），产出 `dist/webui.js`。图片必须内联——宿主的扩展资产表只认
@@ -11,7 +11,7 @@
 
 const ART = __ART__;
 
-const KEY = 'elymes-nte-web.skin.v1';
+const KEY = 'millennium.skin.v1';
 
 /** 默认设置。面板改的就是这份结构。 */
 const DEFAULTS = {
@@ -493,7 +493,7 @@ function mountChrome() {
       { label: '设置', hint: '#/settings', go: () => go('#/settings') },
       { label: '外观', hint: '#/appearance', go: () => go('#/appearance') },
       '-',
-      { label: '皮肤设置（本插件）', go: () => { go('#/world'); toast('在世界与插件里打开「在网页上与曳尔沐聊天」面板'); } },
+      { label: '皮肤设置（本插件）', go: () => { go('#/world'); toast('在世界与插件里打开「千禧年外壳」面板'); } },
     ]),
     buildMenu('View', 'V', [
       { label: '世界与插件', hint: '#/world', go: () => go('#/world') },
@@ -753,7 +753,7 @@ function mountSkinPanel(ctx) {
   const root = ctx && ctx.root ? ctx.root : document.body;
   const wrap = el('div', 'mln-panel');
 
-  const head = el('h3', null, '在网页上与曳尔沐聊天');
+  const head = el('h3', null, '千禧年复古外壳');
   const status = el('div', 'mln-panel-hint', '');
   const paintStatus = () => {
     const on = Boolean(state.settings && state.settings.enabled);
@@ -766,6 +766,13 @@ function mountSkinPanel(ctx) {
   const winRow = el('div', 'mln-panel-actions');
   const openBtn = el('button', null, '打开聊天窗口');
   openBtn.type = 'button';
+  // 第二个入口：千禧风新界面（去边框、1000×760、自带缩放热区）。
+  // 和旧界面共用同一套开窗逻辑，只是 page / 去边框不同。
+  const openCrtBtn = el('button', null, '打开千禧风窗口');
+  openCrtBtn.type = 'button';
+  // 第三个入口：ui_2 素材版 2D 界面（同样去边框，页是 window/ui2.html）。
+  const openUi2Btn = el('button', null, '打开 2D 聊天界面');
+  openUi2Btn.type = 'button';
   const stateBtn = el('button', null, '检查窗口服务');
   stateBtn.type = 'button';
   const copyPortBtn = el('button', null, '复制端口');
@@ -773,7 +780,7 @@ function mountSkinPanel(ctx) {
   const copyUrlBtn = el('button', null, '复制地址');
   copyUrlBtn.type = 'button';
   const winState = el('div', 'mln-panel-hint', '');
-  winRow.append(openBtn, stateBtn, copyPortBtn, copyUrlBtn);
+  winRow.append(openBtn, openCrtBtn, openUi2Btn, stateBtn, copyPortBtn, copyUrlBtn);
 
   // 端口/地址由 world 侧决定，这里只记住最近一次拿到的值，没拿过就用兜底。
   let lastWin = null;
@@ -838,6 +845,41 @@ function mountSkinPanel(ctx) {
     }
   });
 
+  // 新界面入口：同一个开窗逻辑，页不同（会先把旧窗关掉再开，两个不能同时开）。
+  openCrtBtn.addEventListener('click', async () => {
+    if (!ctx || typeof ctx.invoke !== 'function') {
+      toast('这个宿主版本没有 invoke，打不开窗口');
+      return;
+    }
+    openCrtBtn.disabled = true;
+    try {
+      showWinState(await ctx.invoke('openCrtWindow', []));
+      toast('千禧风窗口已打开');
+    } catch (err) {
+      toast('打开失败：' + (err && err.message ? err.message : String(err)));
+    } finally {
+      openCrtBtn.disabled = false;
+    }
+  });
+
+  // 第三套界面入口：ui_2 素材版。走和桌宠同一条透明浮层通道（openUi2Layer），
+  // 不再走 Edge --app 窗：那个窗自己铺不透明底，CSS 透明盖不过去。
+  openUi2Btn.addEventListener('click', async () => {
+    if (!ctx || typeof ctx.invoke !== 'function') {
+      toast('这个宿主版本没有 invoke，打不开窗口');
+      return;
+    }
+    openUi2Btn.disabled = true;
+    try {
+      showWinState(await ctx.invoke('openUi2Layer', []));
+      toast('2D 聊天界面已打开');
+    } catch (err) {
+      toast('打开失败：' + (err && err.message ? err.message : String(err)));
+    } finally {
+      openUi2Btn.disabled = false;
+    }
+  });
+
   stateBtn.addEventListener('click', async () => {
     try {
       showWinState(await ctx.invoke('windowState', []));
@@ -892,7 +934,7 @@ function mountSkinPanel(ctx) {
   const cbEnabled = el('input');
   cbEnabled.type = 'checkbox';
   cbEnabled.checked = draft.enabled;
-  const lbEnabled = el('span', null, '启用曳尔沐对话皮肤');
+  const lbEnabled = el('span', null, '启用千禧年皮肤');
   rowEnabled.append(cbEnabled, lbEnabled);
 
   const rowGlitch = el('div', 'mln-panel-toggle');

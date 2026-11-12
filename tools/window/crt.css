@@ -1,0 +1,581 @@
+/* ==========================================================================
+   crt.css —— 「Y-SPEAK」像素聊天窗样式
+
+   为什么单独一个文件：旧的 window.css 是 QQ2007 版式（菜单栏 + 面板切换 +
+   表单），结构完全不同，硬塞进去会互相污染。新页面只管一套外观，旧的整套
+   原样留着当备份（/window/index.html）。
+
+   尺寸：整窗 1000×760（用户选定）。所有内部尺寸都基于这个画布硬排，
+   不做响应式——聊天窗是不许拖拽缩放的固定尺寸窗口。
+   ========================================================================== */
+
+@font-face {
+  font-family: 'PoxiaoPixel';
+  src: url('/window/crt/poxiao-pixel-cn-12.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  /* 主色板：暗紫底 + 亮蓝网格 + 品红噪点 + 米黄纸面 */
+  --ink-deep: #0a0518;
+  --ink: #150c33;
+  --violet: #7b5cff;
+  --violet-dim: #4a34a8;
+  --blue-light: #6f9bff;
+  --blue-deep: #2a4bc4;
+  --pink: #ff5fae;
+  --pink-soft: #ffb3d9;
+  --paper: #f7ecd6;      /* 聊天框米黄 */
+  --paper-edge: #e08d8d; /* 聊天框淡红描边 */
+  --paper-rim: #fff8e6;  /* 最外圈细米黄边 */
+  --text: #2b1a16;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;   /* 无边框后窗口外沿不画底色，靠 .win 自己撑满 */
+  font-family: 'PoxiaoPixel', 'Microsoft YaHei', monospace;
+  -webkit-font-smoothing: none;  /* 像素字必须关掉抗锯齿，否则糊成一团 */
+  font-smooth: never;
+  user-select: none;
+  cursor: default;
+}
+
+/* 缩放方式：整张设计稿等比缩放（v3）。
+   窗口可以自由拖大拖小，但里面所有东西——边框、格网、人物、对话框——
+   都按 1000×760 这一个比例整体缩放，不各自适配、不拉伸。
+   --fit 由 crt.js 的 fitStage() 按窗口尺寸算。 */
+html {
+  background: #06030c;
+}
+body {
+  /* 定成设计稿尺寸：translate(-50%,-50%) 的参照是 body 自己，
+     若 body 是 100% 视口宽，设计稿会偏向右下、右侧被裁掉。 */
+  width: 1000px;
+  height: 760px;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--fit, 1));
+  transform-origin: center center;
+  background: #06030c;
+}
+
+/* ── 窗口外框 ────────────────────────────────────────────────────────────────
+   图一的外框是「紫色发光带 + 内侧白高光倒角」两层。做法：.win 自己当紫色
+   带（border），::before 当内侧白线。这样只要一个元素就能撑满整窗。         */
+.win {
+  position: relative;
+  width: 1000px;
+  height: 760px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 5px solid var(--violet);
+  border-radius: 16px;
+  background: var(--ink-deep);
+  box-shadow:
+    0 0 0 1px #d9ccff inset,          /* 内侧白高光 */
+    0 0 18px rgba(123, 92, 255, .55),
+    0 0 42px rgba(123, 92, 255, .25);
+  overflow: hidden;
+  /* 唤起/收起动效的锚点在窗口中心略偏下，图三的透视是绕这里转的 */
+  transform-origin: 50% 55%;
+  transition: transform .3s ease, opacity .3s ease;
+}
+
+/* 收起态：只有缩放淡出（用户确认），不做 3D 翻转 */
+.win.is-hidden {
+  transform: scale(.5);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 缩放热区 ────────────────────────────────────────────────────────────────
+   去边框后窗口没有任何可拖的边缘，所以页面自己铺四条 6px 的感应带。
+   只在边缘内缩 26px 的范围内生效，避开四角圆角和标题栏按钮。
+   注：不要加“拖拽时整窗变淡”的效果，用户明确不要。                      */
+.rz {
+  position: fixed;
+  z-index: 40;
+}
+.rz-e  { right: 0; top: 26px; bottom: 26px; width: 6px; cursor: ew-resize; }
+.rz-w  { left: 0;  top: 26px; bottom: 26px; width: 6px; cursor: ew-resize; }
+.rz-s  { left: 26px; right: 26px; bottom: 0; height: 6px; cursor: ns-resize; }
+.rz-n  { left: 26px; right: 26px; top: 0;    height: 6px; cursor: ns-resize; }
+.rz-ne { right: 0; top: 0;    width: 18px; height: 18px; cursor: nesw-resize; }
+.rz-nw { left: 0;  top: 0;    width: 18px; height: 18px; cursor: nwse-resize; }
+.rz-se { right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; }
+.rz-sw { left: 0;  bottom: 0; width: 18px; height: 18px; cursor: nesw-resize; }
+
+/* 拖左边时把人物水平翻转：推拉姿势的手要朝向被拖的那一侧。
+   只翻 .person，背景格子和对话框都不动。 */
+.stage.flip .person {
+  transform: scaleX(-1);
+}
+
+/* 拖尺寸期间不再把内容淡掉：用户不要这个半透明效果，拖动时就保持正常画面。 */
+
+/* ── 标题栏 ──────────────────────────────────────────────────────────────────
+   蓝色渐变 + 左侧小图标 + 右侧三个按钮。按钮是真的 <button>，绑定本地接口
+   去控制真实窗口（Win32），不是装饰。                                      */
+.titlebar {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  background: linear-gradient(180deg, #6f9bff 0%, #4a72f0 42%, #2a4bc4 100%);
+  border-bottom: 2px solid #97b4ff;
+  /* 这一条留给页面内拖动：按住标题栏空白处移动真实窗口 */
+  cursor: move;
+}
+
+.tb-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  background: #6b3fd4;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px #2a1a6e;
+}
+
+/* 图标右边那个细小的 Y 字形，用 CSS 画，不额外占素材 */
+.tb-glyph {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+  color: #dfe8ff;
+  letter-spacing: -.5px;
+  text-shadow: 0 1px 0 #1b2a72;
+}
+
+.tb-text {
+  flex: 1 1 auto;
+  font-size: 15px;
+  color: #ffffff;
+  letter-spacing: .5px;
+  text-shadow: 1px 1px 0 #1b2a72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tb-btns { display: flex; gap: 5px; flex: 0 0 auto; }
+
+.tb-btn {
+  width: 22px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: #eef4ff;
+  background: linear-gradient(180deg, #7ea3ff, #3a5fd8);
+  border: 2px solid #dbe6ff;
+  border-radius: 0;
+  box-shadow: 0 0 0 1px #1b2a72;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tb-btn:hover { background: linear-gradient(180deg, #a8c2ff, #5578e8); }
+.tb-btn:active { transform: translate(1px, 1px); }
+
+/* 关闭键在图一里是粉色实心 —— 唯一的红色元素，视觉上用来“报警” */
+.tb-btn.tb-close {
+  background: linear-gradient(180deg, #ff8cc6, #ff3d92);
+  border-color: #ffd9ec;
+  color: #ffffff;
+}
+
+.tb-btn.tb-close:hover { background: linear-gradient(180deg, #ffa8d6, #ff5aa5); }
+
+/* ── 内容区（人物台） ───────────────────────────────────────────────────────
+   三层叠加，顺序很重要：
+     1) 深紫→黑的渐变底
+     2) 细格网（1px 低透明度亮蓝，26px 一格）
+     3) 下半部品红半调噪点，靠 mask 从下往上淡出
+   为什么用 mask 而不是直接画一个高度固定的小块：图一的噪点是从底边
+   往上“散开”的，硬切会留一条明显的水平接缝。                            */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    #000000 0%,
+    #000000 6%,
+    #00002f 16%,
+    #0e0058 100%
+  );
+}
+
+.stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* 参考图的背景不是实线，而是两套虚线：
+     大虚线 38×32 一格（划 6 空 6），叠一层 4px 一行的细点线当扇描线。
+     纯 CSS 写不出同时带“划”和“空”又精确对齐的网格，所以用一张 76×64 的
+     可平铺贴片（= 2×2 个大格），像素放大后边缘不糊。 */
+  background-image: url('crt/grid.png');
+  background-size: 185px 185px;
+  background-repeat: repeat;
+  image-rendering: pixelated;
+  /* 格网只在中段清楚，边角淡掉，避免和人物抢眼 */
+  mask-image: radial-gradient(130% 100% at 50% 40%, #000 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(130% 100% at 50% 40%, #000 55%, transparent 100%);
+  pointer-events: none;
+}
+
+/* 粉色半调噪点带。
+   为什么用贴片而不是 radial-gradient：参考图里这些不是小圆点，而是像素方块，
+   相邻格子会连成一小段横条，密度也不均匀。纯 CSS 只能铺出规则的小圆点，
+   看上去既“小”又“密”还“一段一段断开”。所以用一张 64×64 的可平铺贴片，
+   配合 image-rendering: pixelated 放大后保持方块边缘。贴片 132×132（可被列距 12 与行距 11 整除）。 */
+.stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(96px, 24%, 190px);
+  background-image: url('crt/petals.png');
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: 0 0;
+  image-rendering: pixelated;
+  /* 不再用遮罩渐变：疏密已经写进图片本身（上 0.44 / 下 0.88）。 */
+  pointer-events: none;
+}
+
+/* ── 人物 ───────────────────────────────────────────────────────────────────
+   立绘 1142×919，人物沉在画布底边（透明区在上方），所以定位方式是
+   「底对齐」，不是垂直居中——居中会把人物整体压到舞台中间偏上，
+   下缘悬空，和聊天框之间出现一道缝。                                     */
+.person {
+  position: absolute;
+  /* 等比（取消自动贴边）：高度铺满舞台，宽度按 814:636 算，人物完整不被裁。
+     整张设计稿由 --fit 统一缩放，这里只按设计稿内部的像素关系写。 */
+  left: 50%;
+  height: 100%;
+  width: auto;
+  transform: translateX(-50%);
+  aspect-ratio: 814 / 636;
+  bottom: -8px;
+  pointer-events: none;
+  z-index: 2;   /* 必须高于 .stage::after 的粉色半调，否则人物被点子盖一层 */
+}
+
+/* 为什么必须 absolute：10 张立绘叠在同一位置轮流显影。
+   如果留成正常流，它们会纵向堆成 5300px 长的一条，显示区里只剩最后一张，
+   而最后一张默认是隐的 —— 看起来就是“人物根本没出来”。 */
+.person img {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: bottom center;
+  image-rendering: auto;  /* 立绘是精细插画，这里不能像素化 */
+  opacity: 0;
+  /* 这里绝不能加 opacity 过渡：两张立绘一淡出一淡入，中间会有 0.1 秒“两张都半透明”，
+     透过人物能看见后面的格网和半调网点 —— 用户看到的就是“切帧时闪一下”。
+     真正的帧动画是瞬时切换的，所以这里保持默认（无过渡）。 */
+}
+
+.person img.on { opacity: 1; }
+
+/* ── 指导态特效 ─────────────────────────────────────────────────────────────
+   教鞭已经画在 教导_1/2.png 里（鞭梢约在画布 17%×27%），所以星星只需要
+   围着手和头散开，不用算鞭子的角度。所有特效默认隐藏，加 .guide 才出现。
+   呼吸动画：上下微浮 + 明暗闪烁，3 秒一个循环，各自延迟错开。            */
+.fx {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .25s ease;
+  image-rendering: pixelated;  /* 这些都是小像素图，放大必须硬边 */
+  z-index: 3;
+}
+
+.stage.guide .fx { opacity: 1; animation: fx-float 3s ease-in-out infinite; }
+
+@keyframes fx-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: .92; }
+  50%      { transform: translateY(-7px) scale(1.06); opacity: 1; }
+}
+
+/* 位置按角色头/手的大致方位摆，左上一颗给兔头，四颗星星围着人物。
+   用百分比而不是 px：窗口现在可以任意拖大小，px 会在变形后脱离人物。 */
+.fx-rabbit { left: 9.6%;  top: 10.5%; width: 92px;  }
+.fx-s1     { left: 9.6%;  top: 39%;   width: 44px;  animation-delay: -.4s; }
+.fx-s2     { left: 62%;   top: 27%;   width: 34px;  animation-delay: -1.3s; }
+.fx-s3     { left: 39%;   top: 5%;    width: 30px;  animation-delay: -2.1s; }
+.fx-s4     { left: 64%;   top: 49%;   width: 28px;  animation-delay: -.9s; }
+
+/* ── 舞台左上：录制标记 + 五颗心 ────────────────────────────────────────────
+   小字 19:30 ● REC 是纯文字（素材里没有），心是 心_左上角.png。             */
+.rec {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  color: #e8e2ff;
+  text-shadow: 1px 1px 0 #0a0518;
+  z-index: 6;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5fae;
+  box-shadow: 0 0 6px rgba(255, 95, 174, .9);
+  animation: rec-blink 1.6s steps(1, end) infinite;
+}
+
+@keyframes rec-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .25; } }
+
+.hearts {
+  position: absolute;
+  left: 14px;
+  top: 34px;
+  width: 180px;
+  z-index: 6;
+  image-rendering: pixelated;
+}
+
+/* ── 舞台右上：头像卡 + 故障面板 ────────────────────────────────────────────
+   两张素材直接当 <img> 叠着放，不再用 CSS 重画（它们是像素画，重画不如贴图）。
+   故障面板里的“乱码”是素材自带的，不用代码生成。                          */
+.side {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 6;
+  image-rendering: pixelated;
+}
+
+.side .card { width: 132px; display: block; cursor: pointer; }
+.side .card:active { transform: translateY(1px); }
+.side .glitch { width: 130px; display: block; }
+
+/* ── 对话框（米黄纸面） ─────────────────────────────────────────────────────
+   三层描边：外圈细米黄（::before 的 box-shadow 最外层）+ 淡红边 + 米黄底。
+   图一的角只有底部两角是圆的，上面两角是直角，这个细节保留。              */
+.dialog-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0 40px 10px;
+  background: transparent;
+  z-index: 8;
+}
+
+.dialog {
+  position: relative;
+  height: 168px;
+  padding: 20px 18px 10px;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 3px solid var(--paper-edge);
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 0 0 2px var(--paper-rim), 0 0 0 4px #b98a5a;
+  color: var(--text);
+  /* 必须是 visible：Y-SPEAK 标签和那颗大心是“骑”在对话框上沿的，
+     一旦 hidden 就会被切掉半个心。正文滚动由 .lines 自己管。 */
+  overflow: visible;
+}
+
+/* 名字标签：骑在对话框上边缘，左侧压一颗淡蓝大像素心。
+   标签用白色粗边，是图一里最“贴纸感”的一处。                              */
+.tag {
+  position: absolute;
+  left: 78px;
+  top: -19px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+}
+
+.tag-heart {
+  /* 参考图里这颗心是骑在聊天框左边缘上的：右半边压在米黄框上，
+     左半边悬在网格背景里，中心大致落在边框线上。
+     所以不跟着 flex 流排，改成相对 .tag 绝对定位，往左拉出边框。 */
+  position: absolute;
+  left: -100px;
+  top: -30px;
+  width: 74px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 0 rgba(20, 6, 40, .35));
+}
+
+.tag-plate {
+  padding: 2px 10px 1px;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: #2b1a16;
+  background: var(--paper);
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 2px #b98a5a;
+}
+
+/* 正文区：可滚动，Y 的最新一句用打字机逐字出现。
+   min-height:0 是必须的：flex 子项默认不肯缩到内容以下，缺了它正文会把
+   输入行顶出对话框。                                                     */
+.lines {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 17px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 输入行：一道虚线当分隔，输入框本身不画框，融进纸面 */
+.entry {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 2px dashed #d9b98f;
+}
+
+.entry-mark { font-size: 13px; color: #b98a5a; }
+
+.entry input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 2px 0;
+  caret-color: #ff3d92;
+}
+
+.entry input::placeholder { color: #b9a184; }
+
+/* 发送键做成一颗小像素方键，不用原生按钮外观 */
+.entry-send {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 14px;
+  color: #2b1a16;
+  background: #ffe6b8;
+  border: 2px solid #b98a5a;
+  box-shadow: 0 2px 0 #b98a5a;
+  padding: 1px 8px 0;
+  cursor: pointer;
+}
+
+.entry-send:hover { background: #fff1d2; }
+.entry-send:active { transform: translateY(2px); box-shadow: none; }
+
+.lines::-webkit-scrollbar { width: 8px; }
+.lines::-webkit-scrollbar-thumb { background: #d9b98f; border-radius: 4px; }
+.lines::-webkit-scrollbar-track { background: #efe0c4; }
+
+.line { margin: 0 0 4px; }
+
+/* 玩家自己说的话：青色 + 右侧对齐，和角色台词一眼区分 */
+.line.me { color: #1f6b7a; text-align: right; }
+
+/* 系统提示（连接断开之类）：灰色小字 */
+.line.sys { color: #9a7f6a; font-size: 14px; }
+
+/* 打字机光标：块状，闪烁，符合像素风 */
+.caret {
+  display: inline-block;
+  width: 9px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: #2b1a16;
+  animation: caret-blink .7s steps(1, end) infinite;
+}
+
+@keyframes caret-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+/* ── 底栏：喇叭 + 进度条 + 斜纹 ─────────────────────────────────────────────
+   进度条直接用 音量条.png（粉色填充 + 白色滑块），不做 CSS 重画。          */
+.underbar {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 0 14px;
+  background: linear-gradient(180deg, #1c1140, #0d0722);
+  border-top: 2px solid #2f2064;
+  z-index: 8;
+}
+
+.underbar img { image-rendering: pixelated; display: block; }
+
+.ub-rewind { width: 26px; opacity: .9; cursor: pointer; }
+.ub-rewind:hover { opacity: 1; }
+
+.ub-meter {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 24px;
+  background: url('/window/crt/detail/meter.png') left center / 84px 24px no-repeat;
+}
+
+/* 滑块之后的空轨：虚线，颜色取淡紫。图一里这条轨一直拉到右侧 */
+.ub-track {
+  flex: 0 1 240px;
+  height: 6px;
+  background-image: repeating-linear-gradient(90deg, #6b5ba8 0 6px, transparent 6px 11px);
+  opacity: .75;
+}
+
+.ub-num {
+  font-size: 15px;
+  color: #ffd9ec;
+  text-shadow: 1px 1px 0 #4a1a3a;
+  letter-spacing: 1px;
+}
+
+.ub-spacer { flex: 1 1 auto; }
+
+/* 右下角三道斜纹，纯 CSS 画 */
+.ub-slats {
+  width: 34px;
+  height: 20px;
+  background-image: repeating-linear-gradient(
+    65deg,
+    #8b7bd8 0 3px,
+    transparent 3px 7px
+  );
+  opacity: .8;
+}
+
+/* ── 不要加小屏媒体查询 ─────────────────────────────────────────────────────
+   设计稿永远 1000×760，整张靠 body 的 --fit 等比缩放。
+   2026-11-12 删掉过一段 @media (max-width:1010px) 的「小屏兼容」：
+   真实窗口是 1000×760 物理像素，本机 150% 缩放下页面只有约 667×507 CSS 像素，
+   那个条件会一直命中，把 .win 改成视口大小 → 舞台压扁、对话框固定 168px 不再缩。 */

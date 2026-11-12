@@ -1,5 +1,5 @@
 /**
- * 在网页上与曳尔沐聊天（elymes-nte-web）
+ * 网页端曳尔沐对话插件（elymes-nte-web）
  * ====================================
  * 这个插件本体很薄，两件事：
  *   1. 提供一个面板（`dist/webui.js` 的 `panels.skin`），里面是「启动窗口」按钮；
@@ -27,8 +27,38 @@ const SETTINGS_KEY = 'elymes-nte-web.settings.v1';
 const PKG_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WIN_PORT = Number(process.env.ENW_PORT || 18800);
 const WIN_URL = `http://127.0.0.1:${WIN_PORT}/`;
+/* 对话窗现在用新界面 window/crt.html（旧 index.html 留着当备份，随时改回去）。
+   注意 WIN_URL 本身不能动：桌宠的 pet.html 和一堆 /api 都是拼在它后面的。 */
+const CHAT_URL = `${WIN_URL}window/crt.html`;
+/* 第三套：ui_2 素材版 2D 聊天界面。与上面两套并存，入口各管各的。 */
+const UI2_URL = `${WIN_URL}window/ui2.html`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 窗刚开出来时标题/样式还没定，隔 0.7 秒连试几回，成功一次就收手。 */
+async function attachFrameLater() {
+  for (let i = 0; i < 12; i++) {
+    await sleep(700);
+    try {
+      const r = await fetch(`${WIN_URL}elymes-api/win?action=attach`);
+      const j = await r.json();
+      if (j && j.ok && j.hwnd) return;
+    } catch {
+      /* 服务还没起好或外挂进程还没听上，下一轮再试 */
+    }
+  }
+}
+
+/** 聊天窗口现在真的在吗。问本地外挂，别信子进程对象。 */
+async function chatWindowAlive() {
+  try {
+    const r = await fetch(`${WIN_URL}elymes-api/win?action=state`);
+    const j = await r.json();
+    return Boolean(j && j.ok);
+  } catch {
+    return false;
+  }
+}
 
 /** 本地窗口服务活着吗。 */
 function pingServer(timeoutMs = 1200) {
@@ -160,13 +190,13 @@ class ElymesNteWeb {
    */
   webUi() {
     return {
-      label: '曳尔沐对话',
+      label: '和Y？聊天',
       lamps: [],
       panels: [
         {
           id: 'skin',
           title: '对话窗口',
-          description: '启动聊天窗口与桌宠、导入立绘、试播表情；窗口内的 Edit 面板可调桌宠尺寸与速度',
+          description: '启动聊天窗口、表情关键词、帧间隔与颜文字',
         },
       ],
       invoke: async (panel, method, args) => {
@@ -176,6 +206,15 @@ class ElymesNteWeb {
         }
         if (method === 'openWindow') {
           return await this.openWindow(Boolean(list[0]));
+        }
+        if (method === 'openCrtWindow') {
+          // 两个入口共用同一套开窗逻辑，只是 page / 去边框不同：
+          // 按钮上有两个，一个开旧界面（系统标题栏），一个开千禧风新界面（去边框）。
+          return await this.openWindow(true, 'window/crt.html', true);
+        }
+        if (method === 'openUi2Window') {
+          // 第三套界面：ui_2 素材版。同样是去边框的独立窗口，只是页不同。
+          return await this.openWindow(true, 'window/ui2.html', true);
         }
         if (method === 'importPortrait') {
           return await this.importPortrait(list[0]);
@@ -201,6 +240,12 @@ class ElymesNteWeb {
         if (method === 'openPetWindow') {
           return await this.openPetWindow(Boolean(list[0]));
         }
+        // 2D 聊天界面：走和桌宠同一条透明浮层通道，而不是 Edge --app 窗。
+        // Edge 的 --app 窗会自己铺不透明底，CSS 透明也盖不过去；宿主的
+        // --pet-host 浮层才是真透明。找不到宿主时 openPetWindow 会退回 Edge。
+        if (method === 'openUi2Layer') {
+          return await this.openPetWindow(true, 'window/ui2.html', '300,340');
+        }
         if (method === 'closePetWindow') {
           return await this.closePetWindow();
         }
@@ -210,88 +255,138 @@ class ElymesNteWeb {
   }
 
   /** 起服务 → 开 Edge --app 窗口。`force` 为真时忽略已开着的那个。 */
-  async openWindow(force = false) {
+  async openWindow(force = false, page = 'index.html', frame = false) {
     const serverStarted = await ensureServer();
-    if (this.browser && !force && !this.browser.killed) {
-      return { ok: true, url: WIN_URL, reused: true, serverStarted };
+    // 回给前端的 url 只是给人看的，三页各对应自己的地址
+    const target =
+      page === 'window/crt.html' ? CHAT_URL : page === 'window/ui2.html' ? UI2_URL : WIN_URL;
+    // 不能只看 this.browser.killed：Edge 主进程常常活得好好的，只是那个窗被
+    // 我们关掉了（closeall / 点关闭），这时 killed 是 false，于是这里会直接
+    // 返回 reused 而不开窗——用户看到的就是“点按钮没反应”。
+    // 所以改成问本地服务：真有窗口才算复用。
+    if (!force && (await chatWindowAlive())) {
+      return { ok: true, url: target, reused: true, serverStarted };
     }
-    const browser = findBrowser();
-    if (!browser) throw new Error('没找到 Edge 或 Chrome，装一个才能开窗口');
-    const child = spawn(
-      browser,
-      [
-        `--app=${WIN_URL}`,
-        '--window-size=1120,740',
-        '--no-first-run',
-        '--disable-features=Translate,MediaRouter',
-        '--autoplay-policy=no-user-gesture-required',
-      ],
-      { detached: true, stdio: 'ignore', windowsHide: false },
-    );
-    child.unref();
-    this.browser = child;
-    this.log('对话窗口已打开：' + WIN_URL);
-    return { ok: true, url: WIN_URL, browser, serverStarted, reused: false };
+    if (!findBrowser()) throw new Error('没找到 Edge 或 Chrome，装一个才能开窗口');
+    // 开窗统一交给本地服务：--user-data-dir、清残留实例、去边框、摆位都在
+    // tools/window-server.mjs 里，这里再自己 spawn 一遍只会两头不同步。
+    const qs = `?page=${encodeURIComponent(page)}&frame=${frame ? '1' : '0'}`;
+    const resp = await fetch(`${WIN_URL}elymes-api/open-chat${qs}`, { method: 'POST' });
+    const out = await resp.json();
+    this.log('对话窗口已打开：' + target);
+    return { ok: true, url: target, serverStarted, reused: !(out && out.opened) };
   }
 
   async closeWindow() {
+    // 进程句柄已经不在插件手里（开窗交给服务端了），改让服务端关窗。
     try {
-      this.browser?.kill?.();
+      await fetch(`${WIN_URL}elymes-api/win?action=close`);
     } catch {
-      /* 已经退了 */
+      /* 服务没起就没什么可关的 */
     }
     this.browser = null;
     return { ok: true };
   }
 
-  /** 打开桌宠窗口：优先走宿主的透明浮层，退路才是 Edge 的小方窗。 */
-  async openPetWindow(force = false) {
+  /**
+   * 桌宠子进程统一从这里起。
+   *
+   * `ELECTRON_RUN_AS_NODE` 一定要摘掉：插件跑在 Core 宿主进程里，那边 env 带着
+   * 这个变量时，`Coopanion.exe --pet-host` 会被 Electron 当成「按 Node 解释器跑」，
+   * 我们拼的参数全变成 node 的参数，进程立刻打一行 `bad option: --pet-host` 就没了，
+   * 屏幕上什么都不出现——「启动桌宠」点了没反应的第一现场就在这里。
+   */
+  spawnPetHost(command, args, extra = {}) {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    delete env.NODE_OPTIONS;
+    const child = spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true, ...extra, env });
+    // 自己退出的进程 `killed` 永远是 false，句柄不清掉就会一直走「复用」分支假成功。
+    child.on('error', (err) => {
+      if (this.petWindow === child) this.petWindow = null;
+      this.log('桌宠进程起不来：' + (err && err.message ? err.message : err));
+    });
+    child.on('exit', (code) => {
+      if (this.petWindow === child) this.petWindow = null;
+      this.log('桌宠进程已退出，code=' + code);
+    });
+    child.unref();
+    return child;
+  }
+
+  /** 收掉上一个桌宠进程，并等它真退干净：同一份 userData 抢着起会互相踩缓存。 */
+  async stopPetHost() {
+    const child = this.petWindow;
+    this.petWindow = null;
+    if (!child || child.exitCode !== null) return;
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 1500);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+      try {
+        child.kill();
+      } catch {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  }
+
+  /**
+   * 打开桌宠窗口：优先走宿主的透明浮层，退路才是 Edge 的小方窗。
+   *
+   * 以前这里只看 `this.petWindow.killed` 就返回 reused=true，结果两种情况下按钮
+   * 都是「点了没反应」：页面右键菜单里的「隐藏」走 `HOST.hide()`，进程活着但
+   * 窗口没了；进程自己退了 `killed` 也还是 false。插件侧没有把窗口重新 show 出来
+   * 的通道，所以干脆一律先收掉旧的再起新的——点一次就一定看得到桌宠。
+   */
+  async openPetWindow(force = false, page = 'pet.html', size = '') {
     const serverStarted = await ensureServer();
-    if (this.petWindow && !force && !this.petWindow.killed) {
-      return { ok: true, url: WIN_URL + 'pet.html', reused: true, serverStarted, transparent: this.petTransparent };
-    }
+    await this.stopPetHost();
     const host = findPetHost();
     if (host) {
-      const child = spawn(
-        host.command,
-        [...host.args, `--pet-url=${WIN_URL}pet.html`, `--parent-pid=${process.pid}`],
-        { detached: true, stdio: 'ignore', windowsHide: true },
-      );
-      child.unref();
+      const child = this.spawnPetHost(host.command, [
+        ...host.args,
+        `--pet-url=${WIN_URL}${page}`,
+        `--parent-pid=${process.pid}`,
+        ...(size ? [`--width=${size.split(',')[0]}`, `--height=${size.split(',')[1]}`] : []),
+      ]);
       this.petWindow = child;
       this.petTransparent = true;
-      this.log(`桌宠（透明浮层，来自 ${host.source}）已启动：${WIN_URL}pet.html`);
-      return { ok: true, url: WIN_URL + 'pet.html', transparent: true, source: host.source, serverStarted, reused: false };
+      // 起完盯一眼：真起不来就报错，不能再给面板一个假的 ok。
+      await sleep(1200);
+      if (child.exitCode !== null) {
+        throw new Error('窗口进程起来就退了（code=' + child.exitCode + '），详见 data/logs/core.log');
+      }
+      this.log(`透明浮层（来自 ${host.source}）已启动：${WIN_URL}${page}`);
+      return { ok: true, url: WIN_URL + page, transparent: true, source: host.source, serverStarted, reused: false };
     }
     const browser = findBrowser();
     if (!browser) throw new Error('没找到 Edge 或 Chrome，装一个才能开窗口');
-    const child = spawn(
+    const [ew, eh] = (size || '360,360').split(',');
+    const child = this.spawnPetHost(
       browser,
       [
-        `--app=${WIN_URL}pet.html`,
-        '--window-size=360,360',
+        `--app=${WIN_URL}${page}`,
+        `--window-size=${ew},${eh}`,
         '--window-position=100,100',
+        // 和聊天窗一样给一份独立 profile：复用用户默认 profile 会撞上
+        // 「另一个实例正在使用」，开出来是白底窗甚至开不出来。
+        `--user-data-dir=${path.join(PKG_DIR, 'state', 'pet-profile')}`,
         '--no-first-run',
         '--disable-features=Translate,MediaRouter',
         '--disable-background-mode',
         '--disable-backgrounding-occluded-windows',
       ],
-      { detached: true, stdio: 'ignore', windowsHide: false },
+      { windowsHide: false },
     );
-    child.unref();
     this.petWindow = child;
     this.petTransparent = false;
-    this.log('桌宠（Edge 小窗，不透明）已启动：' + WIN_URL + 'pet.html');
-    return { ok: true, url: WIN_URL + 'pet.html', transparent: false, source: 'edge', browser, serverStarted, reused: false };
+    this.log('Edge 小窗（不透明）已启动：' + WIN_URL + page);
+    return { ok: true, url: WIN_URL + page, transparent: false, source: 'edge', browser, serverStarted, reused: false };
   }
 
   async closePetWindow() {
-    try {
-      this.petWindow?.kill?.();
-    } catch {
-      /* 已经退了 */
-    }
-    this.petWindow = null;
+    await this.stopPetHost();
     return { ok: true };
   }
 
@@ -371,7 +466,7 @@ class ElymesNteWeb {
   }
 
   async start() {
-    this.log('在网页上与曳尔沐聊天就绪（设置存于浏览器 ' + SETTINGS_KEY + '）');
+    this.log('网页端曳尔沐对话插件就绪（设置存于浏览器 ' + SETTINGS_KEY + '）');
   }
 
   async stop() {
@@ -382,7 +477,7 @@ class ElymesNteWeb {
   /** 面板只读这个，用来在「世界与插件」里显示一行状态。 */
   describe() {
     return {
-      displayName: '在网页上与曳尔沐聊天',
+      displayName: '和Y？聊天',
       summary: 'QQ2007 聊天窗口（独立 Edge 窗口）+ 像素立绘 + 关键词表情 + 透明桌宠',
       settingsKey: SETTINGS_KEY,
       window: WIN_URL,
@@ -392,7 +487,7 @@ class ElymesNteWeb {
 
 export default {
   id: 'elymes-nte-web',
-  label: '曳尔沐对话',
+  label: '和Y？聊天',
   defaults: () => ({
     enabled: false,
   }),

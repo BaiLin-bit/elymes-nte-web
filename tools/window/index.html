@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>在网页上与曳尔沐聊天</title>
+<title>和Y？聊天</title>
 <link rel="stylesheet" href="/window/window.css">
 </head>
 <body>
-<div class="win" id="win">
+<div class="win live" id="win">
   <div class="titlebar">
     <span class="tb-icon"></span>
     <span class="tb-text" id="tb-text">正在与 ... 聊天......</span>
@@ -26,125 +26,240 @@
     <span class="net" id="net">○ 未连接</span>
   </div>
 
-  <div class="body" id="body">
-    <!-- File：普通对话区 -->
-    <section class="panel on" id="panel-live">
-      <div class="chat" id="chat"></div>
-      <div class="portrait" id="portrait">
-        <img id="portrait-img" alt="">
+  <div class="main">
+    <div class="col-left">
+      <div class="body" id="body">
+        <!-- File：普通对话区 -->
+        <section class="panel on" id="panel-live">
+          <div class="chat" id="chat"></div>
+        </section>
+
+        <!-- Edit：桌宠设置 -->
+        <section class="panel" id="panel-settings">
+          <div class="sheet">
+            <h2 class="sheet-h">桌宠设置</h2>
+
+            <div class="field">
+              <span class="field-k">角色大小</span>
+              <div class="seg" data-key="size">
+                <button data-val="60">60 px</button>
+                <button data-val="75">75 px</button>
+                <button data-val="90">90 px</button>
+                <button data-val="120">120 px</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-k">躲避距离</span>
+              <div class="seg" data-key="avoidIn">
+                <button data-val="90">近</button>
+                <button data-val="130">中</button>
+                <button data-val="200">远</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-k">飞行速度</span>
+              <div class="seg" data-key="speed">
+                <button data-val="0.6">慢</button>
+                <button data-val="1">中</button>
+                <button data-val="1.6">快</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-k">鼠标逗留</span>
+              <label class="check">
+                <input type="checkbox" id="set-follow">
+                <span>跟着鼠标走，走到身边就停下来陪着</span>
+              </label>
+              <span class="hint" id="set-follow-hint"></span>
+            </div>
+
+            <div class="field">
+              <span class="field-k">逗留半径</span>
+              <div class="seg" data-key="followRadius">
+                <button data-val="80">80 px</button>
+                <button data-val="100">100 px</button>
+                <button data-val="120">120 px</button>
+                <button data-val="150">150 px</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-k">安静时间</span>
+              <label class="check">
+                <input type="checkbox" id="set-rest">
+                <span>不要一直飞，隔一阵停下来歇一歇</span>
+              </label>
+            </div>
+
+            <div class="field">
+              <span class="field-k">活动范围（外）</span>
+              <div class="seg" data-key="roamOut">
+                <button data-val="170">小</button>
+                <button data-val="260">中</button>
+                <button data-val="360">大</button>
+              </div>
+            </div>
+
+            <div class="field field-wrap">
+              <span class="field-k">活动范围（内）</span>
+              <div class="seg" data-key="roamIn">
+                <button data-val="40">40 px</button>
+                <button data-val="60">60 px</button>
+                <button data-val="80">80 px</button>
+              </div>
+              <span class="hint">离屏幕中心太近就让开：只在内外半径之间的圆环里活动</span>
+            </div>
+
+            <div class="sheet-foot">
+              <button class="btn" id="set-save">保存</button>
+              <button class="btn" id="set-reset">恢复默认</button>
+              <span class="hint" id="set-hint"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- View：插件与市场 -->
+        <section class="panel" id="panel-world">
+          <div class="sheet">
+            <h2 class="sheet-h">插件</h2>
+            <div class="sublabel">已安装</div>
+            <div class="list" id="world-list"><div class="hint">读取中…</div></div>
+            <div class="soon">
+              <div class="soon-t">插件市场</div>
+              <div class="soon-s">还在路上，先把位置留着。</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Help：接入 / 人格记忆 / 诊断 -->
+        <section class="panel" id="panel-help">
+          <div class="sheet">
+            <div class="tabs" id="help-tabs">
+              <button class="tab on" data-tab="conn">接入</button>
+              <button class="tab" data-tab="persona">人格记忆</button>
+              <button class="tab" data-tab="diag">诊断</button>
+              <button class="tab" data-tab="crt">千禧风窗口</button>
+              <button class="tab" data-tab="ui2">2D 聊天界面</button>
+              <button class="tab" data-tab="tips">操作技巧</button>
+            </div>
+
+            <div class="tabbody on" id="tab-conn">
+              <div class="hint">读取中…</div>
+            </div>
+
+            <div class="tabbody" id="tab-persona">
+              <div class="rowbar">
+                <span class="hint" id="persona-path"></span>
+                <button class="btn" id="persona-reload">重新读</button>
+                <button class="btn" id="persona-save">保存</button>
+              </div>
+              <textarea id="persona-text" spellcheck="false" placeholder="读取中…"></textarea>
+              <div class="hint" id="persona-hint"></div>
+            </div>
+
+            <div class="tabbody" id="tab-diag">
+              <div class="rowbar">
+                <button class="btn" id="diag-refresh">重新检查</button>
+                <span class="hint" id="diag-hint"></span>
+              </div>
+              <pre class="log" id="diag-log">读取中…</pre>
+            </div>
+
+            <div class="tabbody" id="tab-crt">
+              <div class="hint">千禧年复古外壳是独立的 Edge 窗口，点下面的按钮打开；关掉它不影响这里的对话。</div>
+              <div class="rowbar">
+                <button class="btn" id="open-crt">打开千禧风窗口</button>
+                <span class="hint" id="open-crt-hint"></span>
+              </div>
+            </div>
+
+            <div class="tabbody" id="tab-ui2">
+              <div class="hint">2D 聊天界面用 ui_2 素材：人物立绘原图当背景，聊天框是代码重写的 Win98 窗口，同样在独立窗口里打开。</div>
+              <div class="rowbar">
+                <button class="btn" id="open-ui2">打开 2D 聊天界面</button>
+                <span class="hint" id="open-ui2-hint"></span>
+              </div>
+            </div>
+
+            <div class="tabbody" id="tab-tips">
+              <div class="tips-grp">
+                <div class="tips-h">三种聊天窗</div>
+                <div class="kv"><span class="kv-k">旧 QQ 风</span><span class="kv-v">就是现在这个窗口：File 页聊天，Enter 发送、Shift+Enter 换行。File 页没有发送键，直接回车即可。</span></div>
+                <div class="kv"><span class="kv-k">千禧风</span><span class="kv-v">Help →「千禧风窗口」→ 打开。独立 Edge 窗口，关掉它不影响这里的对话。</span></div>
+                <div class="kv"><span class="kv-k">2D 界面</span><span class="kv-v">Help →「2D 聊天界面」→ 打开。素材原图当背景，聊天框是重绘的 Win98 小窗（300×340），走透明浮层。</span></div>
+                <div class="kv"><span class="kv-k">开窗限制</span><span class="kv-v">旧 QQ 风与千禧风共用同一个 Edge 配置目录，同一时间只能开一个；2D 界面和桌宠共用同一条透明浮层，也只能加载一个——开 2D 会顶掉桌宠，想换回桌宠就先收起 2D 再打开桌宠。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">聊天</div>
+                <div class="kv"><span class="kv-k">发送</span><span class="kv-v">Enter 发送；Shift+Enter 换行。</span></div>
+                <div class="kv"><span class="kv-k">表情</span><span class="kv-v">底部 ☺ 图片 A 💎 四个按钮，点开挑一个插入。</span></div>
+                <div class="kv"><span class="kv-k">2D 窗</span><span class="kv-v">右键面板里有「聊天记录」；Esc 或「收起窗口」可收起。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">桌宠</div>
+                <div class="kv"><span class="kv-k">互动</span><span class="kv-v">单击唤起聊天窗口；双击受击闪白；右键菜单：打开聊天 / 别躲我 / 随便逛逛 / 藏起来。</span></div>
+                <div class="kv"><span class="kv-k">设置</span><span class="kv-v">Edit 里调：角色大小、躲避距离、飞行速度、鼠标逗留、逗留半径、安静时间、活动范围内外环；改完按「保存」，桌宠立即生效，不用重启。</span></div>
+                <div class="kv"><span class="kv-k">小提示</span><span class="kv-v">打开「鼠标逗留」后，躲避距离与安静时间会置灰不生效；「安静时间」是让它隔一阵停下来歇一歇。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">窗口操作</div>
+                <div class="kv"><span class="kv-k">移动</span><span class="kv-v">拖标题栏；标题栏按钮 ─ 最小化 / □ 最大化 / ✕ 关闭。</span></div>
+                <div class="kv"><span class="kv-k">缩放</span><span class="kv-v">拖四边或四角，八方向都能拉；最小 520×380，内容整张等比缩放。</span></div>
+                <div class="kv"><span class="kv-k">2D 右键</span><span class="kv-v">九宫格贴边定位、大小 小/中/大、聊天记录、收起窗口。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">快捷键</div>
+                <div class="kv"><span class="kv-k">Ctrl+Alt+Y</span><span class="kv-v">开/关桌宠（装了「启动桌宠热键.vbs」才有；重启电脑后要再双击一次）。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">常见问题</div>
+                <div class="kv"><span class="kv-k">窗口打不开</span><span class="kv-v">多半是 18800 端口被占，或上次 Edge 还挂着同配置目录；关掉旧窗重开，必要时重启 Coopanion。</span></div>
+                <div class="kv"><span class="kv-k">点了没反应</span><span class="kv-v">页面还是改之前的缓存；关掉窗口重新打开（或 Ctrl+R）即可。</span></div>
+                <div class="kv"><span class="kv-k">设置没效果</span><span class="kv-v">Edit 里改完要按「保存」，只改按钮不保存不会生效。</span></div>
+                <div class="kv"><span class="kv-k">桌宠不见了</span><span class="kv-v">可能被 2D 聊天界面顶掉了——两者只能加载一个；收起 2D 再打开桌宠。</span></div>
+                <div class="kv"><span class="kv-k">窗口被压住</span><span class="kv-v">用 Alt+Tab 切回来，或先关掉盖住它的全屏窗口。</span></div>
+              </div>
+
+              <div class="tips-grp">
+                <div class="tips-h">维护小知识</div>
+                <div class="kv"><span class="kv-k">改了页面</span><span class="kv-v">tools\window 下的 html/css/js 改完，窗口 Ctrl+R 即生效。</span></div>
+                <div class="kv"><span class="kv-k">改了代码</span><span class="kv-v">src\index.mjs、tools\window-server.mjs、dist\webui.js 改完要重启 Coopanion。</span></div>
+                <div class="kv"><span class="kv-k">升级</span><span class="kv-v">插件升级会覆盖 tools 下的改动；重要补丁先备份（*.bak_日期），升级后重新应用。</span></div>
+                <div class="kv"><span class="kv-k">端口</span><span class="kv-v">18800 聊天窗/桌宠服务 · 18801 无边框外挂 · 17788 Core。</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
 
-    <!-- Edit：桌宠设置 -->
-    <section class="panel" id="panel-settings">
-      <div class="sheet">
-        <h2 class="sheet-h">桌宠设置</h2>
-
-        <div class="field">
-          <span class="field-k">角色大小</span>
-          <div class="seg" data-key="size">
-            <button data-val="60">60 px</button>
-            <button data-val="75">75 px</button>
-            <button data-val="90">90 px</button>
-            <button data-val="120">120 px</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="field-k">躲避距离</span>
-          <div class="seg" data-key="avoidIn">
-            <button data-val="90">近</button>
-            <button data-val="130">中</button>
-            <button data-val="200">远</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="field-k">飞行速度</span>
-          <div class="seg" data-key="speed">
-            <button data-val="0.6">慢</button>
-            <button data-val="1">中</button>
-            <button data-val="1.6">快</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <span class="field-k">安静时间</span>
-          <label class="check">
-            <input type="checkbox" id="set-rest">
-            <span>不要一直飞，隔一阵停下来歇一歇</span>
-          </label>
-        </div>
-
-        <div class="sheet-foot">
-          <button class="btn" id="set-save">保存</button>
-          <button class="btn" id="set-reset">恢复默认</button>
-          <span class="hint" id="set-hint"></span>
-        </div>
+      <div class="embar" id="embar">
+        <button class="embtn" data-emo="face">☺</button>
+        <button class="embtn" data-emo="img">🖼</button>
+        <button class="embtn" data-emo="case">A</button>
+        <button class="embtn" data-emo="gem">💎</button>
+        <div class="emojis" id="emojis"></div>
       </div>
-    </section>
 
-    <!-- View：插件与市场 -->
-    <section class="panel" id="panel-world">
-      <div class="sheet">
-        <h2 class="sheet-h">插件</h2>
-        <div class="sublabel">已安装</div>
-        <div class="list" id="world-list"><div class="hint">读取中…</div></div>
-        <div class="soon">
-          <div class="soon-t">插件市场</div>
-          <div class="soon-s">还在路上，先把位置留着。</div>
-        </div>
+      <div class="composer">
+        <textarea id="input" placeholder="输入消息..."></textarea>
+        <button id="send">发送</button>
       </div>
-    </section>
-
-    <!-- Help：接入 / 人格记忆 / 诊断 -->
-    <section class="panel" id="panel-help">
-      <div class="sheet">
-        <div class="tabs" id="help-tabs">
-          <button class="tab on" data-tab="conn">接入</button>
-          <button class="tab" data-tab="persona">人格记忆</button>
-          <button class="tab" data-tab="diag">诊断</button>
-        </div>
-
-        <div class="tabbody on" id="tab-conn">
-          <div class="hint">读取中…</div>
-        </div>
-
-        <div class="tabbody" id="tab-persona">
-          <div class="rowbar">
-            <span class="hint" id="persona-path"></span>
-            <button class="btn" id="persona-reload">重新读</button>
-            <button class="btn" id="persona-save">保存</button>
-          </div>
-          <textarea id="persona-text" spellcheck="false" placeholder="读取中…"></textarea>
-          <div class="hint" id="persona-hint"></div>
-        </div>
-
-        <div class="tabbody" id="tab-diag">
-          <div class="rowbar">
-            <button class="btn" id="diag-refresh">重新检查</button>
-            <span class="hint" id="diag-hint"></span>
-          </div>
-          <pre class="log" id="diag-log">读取中…</pre>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div class="embar" id="embar">
-    <button class="embtn" data-emo="face">☺</button>
-    <button class="embtn" data-emo="img">🖼</button>
-    <button class="embtn" data-emo="case">A</button>
-    <button class="embtn" data-emo="gem">💎</button>
-    <div class="emojis" id="emojis"></div>
-  </div>
-
-  <div class="composer">
-    <textarea id="input" placeholder="输入消息..."></textarea>
-    <button id="send">发送</button>
-  </div>
+    </div><!-- /col-left -->
+    <div class="portrait" id="portrait">
+      <img id="portrait-img" alt="">
+    </div>
+  </div><!-- /main -->
 </div>
 
-<script type="module" src="/window/window.js"></script>
+<script src="/window/nt-trigger.js?v=2"></script>
+<script type="module" src="/window/window.js?v=2"></script>
 </body>
 </html>

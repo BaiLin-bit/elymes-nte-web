@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>曳尔沐桌宠</title>
+  <title>Y？桌宠</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -55,6 +55,7 @@
     <div class="menu-sep"></div>
     <div class="menu-item" data-action="calm">别躲我（慢慢飞）</div>
     <div class="menu-item" data-action="wander">自己待着</div>
+    <div class="menu-item" data-action="follow">跟随鼠标（逗留）：关</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-action="hide">藏起来</div>
     <div class="menu-item" data-action="exit">关闭桌宠</div>
@@ -77,6 +78,17 @@
     let REST_MS_MAX = 7000;     // 最长待多久
     let REST_GAP_MIN = 6000;    // 两次安静之间至少隔多久
     let REST_GAP_MAX = 14000;   // 最多隔多久
+    // ── 鼠标逗留（follow） ──
+    let isFollowing = false;    // 布尔开关：开着就跟着光标飞，到半径内停下陪着
+    let FOLLOW_RADIUS = 100;    // 跟随半径：光标离这么近就停
+    const FOLLOW_OUT = 20;      // 滞回：比半径再远这么多才重新起飞
+    const LERP_K = 0.085;       // 弹簧缓动系数，越小越飘
+    const LINGER_AMP = 3;       // 逗留时上下左右最多摆 3px
+    const LINGER_FREQ = 0.3;    // 逗留摆动频率（Hz），慢
+
+    // ── 活动环带（以全屏中心为圆心的圆环：只在 r ～ R 之间活动）──
+    let ROAM_IN = 60;           // 内半径：比这更靠近屏幕中心就往外推
+    let ROAM_OUT = 260;         // 外半径：比这更远离中心就拉回来
     const FLAP_MS = 1500;       // 翅膀一个来回的时间：慢
     const FLAP_AMP = 0.12;      // 翅膀压扁比例：轻，但要看得出来
     const CLICK_DELAY = 240;    // 区分单击与双击
@@ -106,6 +118,7 @@
       ctx.imageSmoothingEnabled = false;
       pet.x = Math.min(Math.max(pet.x, SIZE), Math.max(SIZE, W - SIZE));
       pet.y = Math.min(Math.max(pet.y, SIZE), Math.max(SIZE, H - SIZE));
+      clampRing(false);
     }
 
     // ---------------- 素材 ----------------
@@ -192,7 +205,7 @@
       speed: 2.2,
       anim: 'idle_front',
       frame: 0, frameTick: 0,
-      mode: 'wander',        // wander 自己逛 | avoid 躲光标 | hit 受击
+      mode: 'wander',        // wander 自己逛 | avoid 躲光标 | linger 跟随逗留 | hit 受击
       calm: false,           // 右键「别躲我」：关掉躲避，可以凑近看
       tx: 0, ty: 0,          // 目标点
       facing: 1,             // 1 朝右，-1 朝左
@@ -201,6 +214,9 @@
       nextTarget: 0,
       restUntil: 0,          // 安静到什么时候（这段时间只在原地轻轻悬停）
       nextRest: 4000,        // 下一次该进入安静的时间点
+      lingering: false,      // 跟随中：false 还在追，true 已经在半径圈上逗留
+      lockAngle: 0,          // 逗留时相对光标的方位角
+      lingerT: 0,            // 开始逗留的时刻
     };
     pet.tx = pet.x; pet.ty = pet.y;
 
@@ -236,21 +252,65 @@
     const noise1 = (t) => Math.sin(t * 0.7) * 0.55 + Math.sin(t * 1.31 + 1.7) * 0.3 + Math.sin(t * 2.13 + 3.3) * 0.15;
     const noise2 = (t) => Math.sin(t * 0.53 + 2.1) * 0.55 + Math.sin(t * 1.17 + 0.4) * 0.3 + Math.sin(t * 2.41 + 5.1) * 0.15;
 
-    function pickTarget(now) {
-      const pad = SIZE + 24;
-      const maxX = Math.max(pad, W - pad), maxY = Math.max(pad, H - pad);
-      // 挑点的时候绕开光标周围，别一转身又飞回人家手上
-      const keepAway = pet.calm ? 70 : AVOID_OUT;
-      for (let i = 0; i < 24; i++) {
-        const x = pad + Math.random() * (maxX - pad);
-        const y = pad + Math.random() * (maxY - pad);
-        if (!cursor.on || Math.hypot(cursor.x - x, cursor.y - y) > keepAway) {
-          pet.tx = x;
-          pet.ty = y;
-          break;
-        }
-        if (i === 23) { pet.tx = x; pet.ty = y; }
+    // ---------------- 活动环带 ----------------
+    /** 环带半径：外圈还要被窗口尺寸限死，保证整个身子不出屏。 */
+    function ringRadii() {
+      const pad = SIZE * 0.5 + 4;
+      const out = Math.max(60, Math.min(ROAM_OUT, Math.min(W, H) / 2 - pad));
+      const inn = Math.max(0, Math.min(ROAM_IN, out - 40));
+      return { inn, out, cx: W / 2, cy: H / 2 };
+    }
+
+    /** 把任意一点投影进环带（光标跑到圈外时，跟随目标点用这个）。 */
+    function clampPointToRing(x, y) {
+      const { inn, out, cx, cy } = ringRadii();
+      let dx = x - cx, dy = y - cy;
+      let d = Math.hypot(dx, dy);
+      if (d < 1e-6) { dx = 0; dy = -1; d = 1e-6; }
+      const want = Math.min(out, Math.max(inn, d));
+      if (want === d) return { x, y };
+      const k = want / d;
+      return { x: cx + dx * k, y: cy + dy * k };
+    }
+
+    /** 撞环带墙的反弹：只反径向分量、保留切向，才不会贴着墙抖。n 指向环带内部。 */
+    function reflectRing(nx, ny, damp) {
+      const vn = pet.vx * nx + pet.vy * ny;
+      if (vn >= 0) return;               // 已经在往圈里走了，不用管
+      pet.vx -= (1 + damp) * vn * nx;
+      pet.vy -= (1 + damp) * vn * ny;
+    }
+
+    /** 把角色夹回环带；bounce=true 时会连带把速度弹回来（受击用）。 */
+    function clampRing(bounce) {
+      const { inn, out, cx, cy } = ringRadii();
+      const dx = pet.x - cx, dy = pet.y - cy;
+      const d = Math.hypot(dx, dy) || 1e-6;
+      if (d > out) {
+        pet.x = cx + dx / d * out;
+        pet.y = cy + dy / d * out;
+        if (bounce) reflectRing(-dx / d, -dy / d, 0.6);
+      } else if (d < inn) {
+        pet.x = cx + dx / d * inn;
+        pet.y = cy + dy / d * inn;
+        if (bounce) reflectRing(dx / d, dy / d, 0.6);
       }
+    }
+
+    function pickTarget(now) {
+      const { inn, out, cx, cy } = ringRadii();
+      // 环带内均匀取点：半径要按面积反变换，直接对 r～R 做线性随机会把点挤在内圈
+      const keepAway = pet.calm ? 70 : AVOID_OUT;
+      let px = cx, py = cy;
+      for (let i = 0; i < 24; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const rr = Math.sqrt(inn * inn + Math.random() * (out * out - inn * inn));
+        px = cx + Math.cos(ang) * rr;
+        py = cy + Math.sin(ang) * rr;
+        if (!cursor.on || Math.hypot(cursor.x - px, cursor.y - py) > keepAway) break;
+      }
+      pet.tx = px;
+      pet.ty = py;
       pet.nextTarget = now + 2600 + Math.random() * 3400;
     }
 
@@ -283,11 +343,8 @@
           pet.y += pet.vy * step + (Math.random() - 0.5) * 1.6;
           pet.vx *= 0.94;
           pet.vy *= 0.94;
-          const edge = SIZE * 0.5 + 4;
-          if (pet.x < edge) { pet.x = edge; pet.vx = Math.abs(pet.vx) * 0.5; }
-          if (pet.x > W - edge) { pet.x = W - edge; pet.vx = -Math.abs(pet.vx) * 0.5; }
-          if (pet.y < edge) { pet.y = edge; pet.vy = Math.abs(pet.vy) * 0.5; }
-          if (pet.y > H - edge) { pet.y = H - edge; pet.vy = -Math.abs(pet.vy) * 0.5; }
+          // 受击弹飞也关在环带里：撞圈就弹，别飞出活动范围
+          clampRing(true);
           return;
         }
       }
@@ -295,7 +352,21 @@
       // 模式：光标凑近就躲开，远了就自己逛（右键「别躲我」可关掉躲避）
       const d = cursor.on ? Math.hypot(cursor.x - pet.x, cursor.y - pet.y) : Infinity;
       const avoidIn = pet.calm ? 34 : AVOID_IN;
-      if (pet.mode === 'wander' && d < avoidIn) pet.mode = 'avoid';
+      // 「鼠标逗留」优先：开关打开且拿得到光标时，接管除受击以外的所有模式
+      const followOn = isFollowing && cursor.on;
+      if (followOn) {
+        if (pet.mode !== 'linger') {
+          pet.mode = 'linger';
+          pet.lingering = false;
+          pet.lingerT = now;
+          pet.lockAngle = Math.atan2(pet.y - cursor.y, pet.x - cursor.x);
+          pet.anim = 'glide'; pet.frame = 0; pet.frameTick = 0;
+        }
+      } else if (pet.mode === 'linger') {
+        pet.mode = 'wander';
+        pet.lingering = false;
+        pickTarget(now);
+      } else if (pet.mode === 'wander' && d < avoidIn) pet.mode = 'avoid';
       else if (pet.mode === 'avoid' && d > Math.max(avoidIn + 140, AVOID_OUT * (pet.calm ? 0.3 : 1))) {
         pet.mode = 'wander';
         pickTarget(now);
@@ -309,7 +380,31 @@
       pet.noise += dt * 0.0016;
 
       let tx, ty;
-      if (pet.mode === 'avoid') {
+      if (pet.mode === 'linger') {
+        // 光标可能在环带外，先投影到环带上，再拿这个点当「光标」用
+        const cp = clampPointToRing(cursor.x, cursor.y);
+        const cd = Math.hypot(cp.x - pet.x, cp.y - pet.y);
+        // 半径外：朝光标靠；到圈上了：停在圈上轻轻摆（±3px、慢）
+        if (!pet.lingering && cd <= FOLLOW_RADIUS) {
+          pet.lingering = true;
+          pet.lingerT = now;
+          pet.lockAngle = Math.atan2(pet.y - cp.y, pet.x - cp.x);
+        } else if (pet.lingering && cd > FOLLOW_RADIUS + FOLLOW_OUT) {
+          pet.lingering = false;   // 光标跑远了，重新追
+        }
+        if (pet.lingering) {
+          const ph = (now - pet.lingerT) * 0.001 * Math.PI * 2 * LINGER_FREQ;
+          tx = cp.x + Math.cos(pet.lockAngle) * FOLLOW_RADIUS + Math.sin(ph) * LINGER_AMP;
+          ty = cp.y + Math.sin(pet.lockAngle) * FOLLOW_RADIUS + Math.cos(ph) * LINGER_AMP;
+        } else {
+          // 弹簧缓动 + 噪声侧偏，别笔直冲过去
+          tx = cp.x + noise1(pet.noise) * 30;
+          ty = cp.y + noise2(pet.noise) * 30;
+        }
+        // 目标点再夹回环带：否则逗留圈会飘到环带外，角色被边界来回蹭
+        const ct = clampPointToRing(tx, ty);
+        tx = ct.x; ty = ct.y;
+      } else if (pet.mode === 'avoid') {
         // 朝远离光标的方向撤，距离越近跑得越急
         let ax = pet.x - cursor.x, ay = pet.y - cursor.y;
         const len = Math.hypot(ax, ay);
@@ -336,7 +431,10 @@
       const ddx = tx - pet.x, ddy = ty - pet.y;
       const dist = Math.hypot(ddx, ddy) || 1;
       let want = 2.4;
-      if (pet.mode === 'avoid') {
+      if (pet.mode === 'linger') {
+        // 追的时候离得远就快一点；到圈上了几乎不动，只靠正弦的小位移
+        want = pet.lingering ? 0.5 : Math.min(4.6, 1.5 + (d - FOLLOW_RADIUS) * 0.008);
+      } else if (pet.mode === 'avoid') {
         // 越近越快；离得极近时反而减速，方便点得到
         const near = Math.max(0, avoidIn - d);
         want = d < 46 ? 2.0 : Math.min(4.8, 1.8 + near * 0.016);
@@ -345,18 +443,21 @@
       }
       want *= SPEED;
       const ax2 = (ddx / dist) * want, ay2 = (ddy / dist) * want;
-      pet.vx += (ax2 - pet.vx) * 0.14;
-      pet.vy += (ay2 - pet.vy) * 0.14;
+      // 跟随用更软的弹簧；逗留时硬一点，才压得住正弦摆动
+      const k = pet.mode === 'linger' ? (pet.lingering ? 0.3 : LERP_K) : 0.14;
+      pet.vx += (ax2 - pet.vx) * k;
+      pet.vy += (ay2 - pet.vy) * k;
 
       pet.x += pet.vx * (dt / 16.67);
       pet.y += pet.vy * (dt / 16.67);
 
-      // 边界
+      // 边界：先兜住屏幕四边，再夹回活动环带（漫游/躲避只夹位置，保留切向速度才好顺墙滑）
       const pad = SIZE * 0.5 + 4;
       if (pet.x < pad) { pet.x = pad; pet.vx = Math.abs(pet.vx) * 0.6; }
       if (pet.x > W - pad) { pet.x = W - pad; pet.vx = -Math.abs(pet.vx) * 0.6; }
       if (pet.y < pad) { pet.y = pad; pet.vy = Math.abs(pet.vy) * 0.6; }
       if (pet.y > H - pad) { pet.y = H - pad; pet.vy = -Math.abs(pet.vy) * 0.6; }
+      clampRing(false);
 
       // 朝向 + 动画
       if (Math.abs(pet.vx) > 0.25) pet.facing = pet.vx >= 0 ? 1 : -1;
@@ -426,6 +527,8 @@
         ctx.fillText(
           `HOST=${HOST ? 'yes' : 'NO'} cursor=${cursor.on ? `${cursor.x | 0},${cursor.y | 0}` : 'off'}`
           + ` pet=${pet.x | 0},${pet.y | 0} inter=${interactive ? 'ON' : 'off'} mode=${pet.mode} anim=${pet.anim}`
+          + ` follow=${isFollowing ? 'on' : 'off'}${pet.mode === 'linger' ? (pet.lingering ? '/逗留' : '/追') : ''} r=${FOLLOW_RADIUS}`
+          + ` ring=${ROAM_IN}/${ROAM_OUT}`
           + ` img=${(assets[f.body]?.naturalWidth || 0)}x${(assets[f.body]?.naturalHeight || 0)}`,
           8, 15,
         );
@@ -469,6 +572,7 @@
         if (action === 'chat') openChat();
         else if (action === 'calm') { pet.calm = !pet.calm; }
         else if (action === 'wander') { pet.mode = 'wander'; pickTarget(performance.now()); }
+        else if (action === 'follow') { saveFollow(!isFollowing); }
         else if (action === 'hide') { HOST ? HOST.hide() : window.close(); }
         else if (action === 'exit') { HOST ? HOST.hide() : window.close(); }
       });
@@ -493,18 +597,42 @@
         .catch((err) => fail(`打开聊天窗口失败：${err}`));
     }
 
+    function updateFollowLabel() {
+      const it = menu.querySelector('[data-action="follow"]');
+      if (it) it.textContent = `跟随鼠标（逗留）：${isFollowing ? '开' : '关'}`;
+    }
+
+    /** 右键切开关：先改本页状态，顺带把整份设置写回去（面板和持久化都跟着变）。 */
+    function saveFollow(on) {
+      isFollowing = on;
+      updateFollowLabel();
+      // 没读到过完整设置就先别提交，否则会把别的项覆盖成默认值
+      if (!('size' in cfgCache)) return;
+      cfgCache = { ...cfgCache, follow: on, followRadius: FOLLOW_RADIUS };
+      fetch('/elymes-api/pet-config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(cfgCache),
+      }).catch(() => { /* 存不上就只管这一次，重开窗口回到面板里的值 */ });
+    }
+
     // 给外部调试用：控制台里 __petState() 就能看到当前状态
     window.__petState = () => ({
       x: Math.round(pet.x), y: Math.round(pet.y),
       mode: pet.mode, calm: pet.calm, anim: pet.anim,
       cx: Math.round(cursor.x), cy: Math.round(cursor.y), cursorOn: cursor.on,
       inter: interactive,
+      following: isFollowing,
+      lingering: pet.lingering,
       dist: cursor.on ? Math.round(Math.hypot(cursor.x - pet.x, cursor.y - pet.y)) : -1,
+      roam: ringRadii(),
     });
 
     // ---------------- 设置（Edit 面板存的那份） ----------------
+    let cfgCache = {};   // 最近一次拿到的完整设置，右键改开关时原样带上再提交
     function applyConfig(cfg) {
       if (!cfg || typeof cfg !== 'object') return;
+      cfgCache = { ...cfg };
       const num = (v, lo, hi, dflt) => {
         const n = Number(v);
         if (!Number.isFinite(n)) return dflt;
@@ -514,15 +642,22 @@
       AVOID_IN = Math.round(num(cfg.avoidIn, 20, 600, AVOID_IN));
       AVOID_OUT = Math.round(num(cfg.avoidOut, AVOID_IN + 10, 900, AVOID_OUT));
       SPEED = num(cfg.speed, 0.3, 3, SPEED);
+      FOLLOW_RADIUS = Math.round(num(cfg.followRadius, 80, 400, FOLLOW_RADIUS));
+      // 活动环带：内半径留够至少 40px 环宽，外半径下限 100
+      ROAM_OUT = Math.round(num(cfg.roamOut, 100, 900, ROAM_OUT));
+      ROAM_IN = Math.round(num(cfg.roamIn, 0, Math.max(0, ROAM_OUT - 40), ROAM_IN));
+      isFollowing = cfg.follow === true;
+      updateFollowLabel();
       REST_ON = cfg.rest !== false;
       REST_MS_MIN = Math.round(num(cfg.restMsMin, 800, 60000, REST_MS_MIN));
       REST_MS_MAX = Math.round(num(cfg.restMsMax, REST_MS_MIN + 500, 120000, REST_MS_MAX));
       REST_GAP_MIN = Math.round(num(cfg.restGapMin, 1000, 600000, REST_GAP_MIN));
       REST_GAP_MAX = Math.round(num(cfg.restGapMax, REST_GAP_MIN + 1000, 1200000, REST_GAP_MAX));
-      // 角色变大了就把它拉回画面里，免得半截贴在边上
+      // 角色变大了、或环带改小了，就把它拉回画面与环带里
       const edge = SIZE * 0.5 + 6;
       pet.x = Math.max(edge, Math.min(W - edge, pet.x));
       pet.y = Math.max(edge, Math.min(H - edge, pet.y));
+      clampRing(false);
     }
 
     async function loadConfig() {
@@ -555,6 +690,7 @@
     resize();
     window.addEventListener('resize', resize);
     pickTarget(performance.now());
+    updateFollowLabel();
     void loadConfig();
     watchConfig();
     loadAll.then(() => requestAnimationFrame(frame));
