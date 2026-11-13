@@ -535,6 +535,8 @@ function paintSettings() {
   if (rest) rest.checked = petCfg.rest !== false;
   const follow = $('set-follow');
   if (follow) follow.checked = petCfg.follow === true;
+  const bubble = $('set-bubble');
+  if (bubble) bubble.value = Array.isArray(petCfg.bubbleTexts) ? petCfg.bubbleTexts.join('\n') : '';
   paintFollowState();
 }
 
@@ -575,9 +577,16 @@ function mountSettings() {
       if (hint) hint.textContent = '改过了，按保存才生效';
     });
   }
+  const bubble = $('set-bubble');
+  if (bubble) {
+    bubble.addEventListener('input', () => {
+      const hint = $('set-hint');
+      if (hint) hint.textContent = '改过了，按保存才生效';
+    });
+  }
   $('set-save').addEventListener('click', () => void saveSettings());
   $('set-reset').addEventListener('click', () => {
-    petCfg = { size: 60, avoidIn: 130, avoidOut: 200, speed: 1, follow: false, followRadius: 100, rest: true, roamIn: 60, roamOut: 260 };
+    petCfg = { size: 60, avoidIn: 130, avoidOut: 200, speed: 1, follow: false, followRadius: 100, rest: true, roamIn: 60, roamOut: 260, bubbleTexts: ['我不是怪', '能不能听人把话说完', '好疼', '不要再打了', '我真的要生气了'] };
     paintSettings();
     const hint = $('set-hint');
     if (hint) hint.textContent = '已恢复默认，按保存写下去';
@@ -592,6 +601,15 @@ async function saveSettings() {
   });
   next.rest = $('set-rest').checked;
   next.follow = $('set-follow').checked;
+  const bubble = $('set-bubble');
+  if (bubble) {
+    next.bubbleTexts = bubble.value
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 12)
+      .map((s) => s.slice(0, 80));
+  }
   const hint = $('set-hint');
   const btn = $('set-save');
   if (btn) btn.disabled = true;

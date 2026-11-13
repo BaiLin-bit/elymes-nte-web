@@ -36,6 +36,46 @@
       cursor: default;
     }
     #context-menu.show { display: block; }
+    @font-face {
+      font-family: 'PoxiaoPixel';
+      src: url('/window/crt/poxiao-pixel-cn-12.woff2') format('woff2');
+      font-display: swap;
+    }
+    /* 点桌宠时的像素风气泡：白底黑边椭圆、像素字体，贴着角色头顶点 */
+    #pet-bubble {
+      position: fixed; display: none; z-index: 9998;
+      max-width: 240px;
+      background: #ffffff;
+      border: 2px solid #000000;
+      border-radius: 10px;
+      box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.28);
+      padding: 6px 14px;
+      font-family: 'PoxiaoPixel', "MS Sans Serif", "SimSun", monospace;
+      font-size: 15px; line-height: 1.35;
+      letter-spacing: 0.5px;
+      color: #000000;
+      pointer-events: none;
+      text-align: center;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    #pet-bubble.show { display: block; }
+    /* 气泡尾巴：两层三角形，黑边在外、白底在内 */
+    #pet-bubble::before,
+    #pet-bubble::after {
+      content: ''; position: absolute; left: 50%;
+      width: 0; height: 0;
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+    }
+    #pet-bubble::before {
+      bottom: -9px; margin-left: -8px;
+      border-top: 9px solid #000000;
+    }
+    #pet-bubble::after {
+      bottom: -6px; margin-left: -6px;
+      border-left-width: 6px; border-right-width: 6px;
+      border-top: 6px solid #ffffff;
+    }
     .menu-item { padding: 4px 22px 4px 26px; cursor: default; white-space: nowrap; }
     .menu-item:hover { background: #000080; color: #ffffff; }
     .menu-sep { height: 0; border-top: 1px solid #808080; border-bottom: 1px solid #ffffff; margin: 3px 2px; }
@@ -51,7 +91,9 @@
   <canvas id="pet-canvas"></canvas>
 
   <div id="context-menu">
-    <div class="menu-item" data-action="chat">打开聊天窗口</div>
+    <div class="menu-item" data-action="chat">打开 QQ2007 聊天</div>
+    <div class="menu-item" data-action="chat-crt">打开千禧风窗口</div>
+    <div class="menu-item" data-action="chat-ui2">打开 2D 界面（收起桌宠）</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-action="calm">别躲我（慢慢飞）</div>
     <div class="menu-item" data-action="wander">自己待着</div>
@@ -60,6 +102,8 @@
     <div class="menu-item" data-action="hide">藏起来</div>
     <div class="menu-item" data-action="exit">关闭桌宠</div>
   </div>
+
+  <div id="pet-bubble"></div>
 
   <div id="boot-error"></div>
 
@@ -92,6 +136,9 @@
     const FLAP_MS = 1500;       // 翅膀一个来回的时间：慢
     const FLAP_AMP = 0.12;      // 翅膀压扁比例：轻，但要看得出来
     const CLICK_DELAY = 240;    // 区分单击与双击
+    const BUBBLE_MS = 4000;     // 左键气泡停留时间
+    let BUBBLE_TEXTS = ['我不是怪', '能不能听人把话说完', '好疼', '不要再打了', '我真的要生气了'];
+    const bubbleEl = document.getElementById('pet-bubble');
     const canvas = document.getElementById('pet-canvas');
     const ctx = canvas.getContext('2d');
     const menu = document.getElementById('context-menu');
@@ -321,6 +368,7 @@
       last = now;
       update(dt, now);
       draw();
+      positionBubble();
       syncInteractive();
       requestAnimationFrame(frame);
     }
@@ -542,13 +590,14 @@
       if (menu.classList.contains('show')) return;
       if (!onPet(e.clientX, e.clientY)) return;
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(() => { openChat(); }, CLICK_DELAY);
+      clickTimer = setTimeout(() => { showBubble(); }, CLICK_DELAY);
     });
 
     window.addEventListener('dblclick', (e) => {
       if (!onPet(e.clientX, e.clientY)) return;
       clearTimeout(clickTimer);
       triggerHit();
+      showBubble();
     });
 
     window.addEventListener('contextmenu', (e) => {
@@ -569,7 +618,9 @@
       item.addEventListener('click', () => {
         const action = item.dataset.action;
         menu.classList.remove('show');
-        if (action === 'chat') openChat();
+        if (action === 'chat') openChat('index.html', false);
+        else if (action === 'chat-crt') openChat('window/crt.html', true);
+        else if (action === 'chat-ui2') openUi2();
         else if (action === 'calm') { pet.calm = !pet.calm; }
         else if (action === 'wander') { pet.mode = 'wander'; pickTarget(performance.now()); }
         else if (action === 'follow') { saveFollow(!isFollowing); }
@@ -591,10 +642,41 @@
       pet.vy = (Math.random() - 0.5) * 5;
     }
 
-    function openChat() {
-      fetch('/elymes-api/open-chat', { method: 'POST' })
+    function openChat(page = 'index.html', frame = false) {
+      const qs = `?page=${encodeURIComponent(page)}&frame=${frame ? '1' : '0'}`;
+      fetch(`/elymes-api/open-chat${qs}`, { method: 'POST' })
         .then((r) => r.json())
         .catch((err) => fail(`打开聊天窗口失败：${err}`));
+    }
+
+    /** 2D 聊天界面和桌宠共用同一个透明浮层：打开它等于把桌宠收起来。 */
+    function openUi2() {
+      fetch('/elymes-api/open-ui2', { method: 'POST' })
+        .then(() => { if (HOST && HOST.hide) HOST.hide(); })
+        .catch((err) => fail(`打开 2D 界面失败：${err}`));
+    }
+
+    // ---------------- 气泡（左键 / 双击） ----------------
+    let bubbleTimer = 0;
+    function showBubble() {
+      if (!bubbleEl) return;
+      const list = BUBBLE_TEXTS.length ? BUBBLE_TEXTS : ['……'];
+      bubbleEl.textContent = list[Math.floor(Math.random() * list.length)];
+      bubbleEl.classList.add('show');
+      positionBubble();
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => bubbleEl.classList.remove('show'), BUBBLE_MS);
+    }
+
+    /** 每帧跟着桌宠走：贴着头顶，越界就往回收。 */
+    function positionBubble() {
+      if (!bubbleEl || !bubbleEl.classList.contains('show')) return;
+      const bw = bubbleEl.offsetWidth;
+      const bh = bubbleEl.offsetHeight;
+      const x = Math.max(4, Math.min(W - bw - 4, pet.x - bw / 2));
+      const y = Math.max(4, Math.min(H - bh - 14, pet.y - SIZE / 2 - bh - 10));
+      bubbleEl.style.left = x + 'px';
+      bubbleEl.style.top = y + 'px';
     }
 
     function updateFollowLabel() {
@@ -633,6 +715,10 @@
     function applyConfig(cfg) {
       if (!cfg || typeof cfg !== 'object') return;
       cfgCache = { ...cfg };
+      const texts = Array.isArray(cfg.bubbleTexts)
+        ? cfg.bubbleTexts.map((s) => String(s ?? '').trim()).filter(Boolean).slice(0, 12).map((s) => s.slice(0, 80))
+        : [];
+      if (texts.length) BUBBLE_TEXTS = texts;
       const num = (v, lo, hi, dflt) => {
         const n = Number(v);
         if (!Number.isFinite(n)) return dflt;

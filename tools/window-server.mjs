@@ -489,6 +489,8 @@ function readBody(req, limit = 512 * 1024) {
   restGapMax: 14000,
   roamIn: 60,          // 活动环带内半径（px）
   roamOut: 260,        // 活动环带外半径（px）
+  // 左键/双击桌宠时冒的气泡文案，可在 QQ2007 聊天窗的 Edit 里增删
+  bubbleTexts: ['我不是怪', '能不能听人把话说完', '好疼', '不要再打了', '我真的要生气了'],
 };
 
 /** 存盘的设置可能是老版本、也可能被手工改坏，这里只认认识的字段并夹到合理区间。 */
@@ -514,6 +516,15 @@ function normalizePetConfig(raw) {
     // 活动环带：外半径先定，内半径不能顶到外圈（至少留 40px 环宽），否则环带会退化成一圈
     cfg.roamOut = Math.round(num(raw.roamOut, 100, 900, PET_DEFAULTS.roamOut));
     cfg.roamIn = Math.round(num(raw.roamIn, 0, Math.max(0, cfg.roamOut - 40), Math.min(PET_DEFAULTS.roamIn, Math.max(0, cfg.roamOut - 40))));
+    // 气泡文案：只收字符串，去空白、去空行，最多 12 条、每条 80 字；一条都没有就沿用默认
+    if (Array.isArray(raw.bubbleTexts)) {
+      const texts = raw.bubbleTexts
+        .map((s) => String(s ?? '').trim())
+        .filter(Boolean)
+        .slice(0, 12)
+        .map((s) => s.slice(0, 80));
+      if (texts.length) cfg.bubbleTexts = texts;
+    }
   }
   return cfg;
 }

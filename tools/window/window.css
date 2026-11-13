@@ -340,6 +340,23 @@ html, body {
 .field-wrap { flex-wrap: wrap; }
 /* [ROAM] 设置项多了两行，面板放不下时允许滚动，别让「保存」按钮被裁掉 */
 #panel-settings .sheet { overflow-y: auto; }
+/* [BUBBLE] 气泡台词：多行输入，跟着表单的灰紫配色走 */
+#set-bubble {
+  flex: 1 1 100%;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  margin-top: 2px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #2b2a6b;
+  background: #fff;
+  border: 1px solid #6d6bab;
+  box-shadow: inset 1px 1px 0 #b0aed4;
+  padding: 5px 7px;
+}
 
 /* ── 表单 ───────────────────────────────────────────── */
 .field {

@@ -1,7 +1,7 @@
 {
   "name": "elymes-nte-web",
-  "version": "0.2.1",
-  "description": "和Y？聊天（曳尔沐对话）网页端插件：把聊天做成 QQ2007 / Windows 98 复古窗口与千禧风 CRT 窗口，右侧像素立绘伪插帧、表情随关键词切换，另带一只透明桌宠；包里附开发中遇到的问题.md，界面里还藏着一个和数字、正文原文有关的彩蛋。",
+  "version": "0.2.2",
+  "description": "网页端的和Y？聊天：把聊天页做成 QQ2007 / Windows 98 复古窗口与千禧风 CRT 窗口，立绘随关键词换表情，另附透明桌宠（可冒像素气泡）。包内附《开发中遇到的问题.md》，还藏着一个和数字、正文原文有关的彩蛋。",
   "type": "module",
   "main": "./src/index.mjs",
   "exports": {
@@ -15,15 +15,21 @@
     "tools/build.mjs",
     "tools/webui.source.js",
     "tools/window-server.mjs",
+    "tools/window",
     "tools/win-frame.ps1",
     "tools/nt-top.ps1",
-    "tools/window",
+    "开发中遇到的问题.md",
     "README.md",
-    "LICENSE",
-    "开发中遇到的问题.md"
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
+  },
+  "os": [
+    "win32"
+  ],
+  "dependencies": {
+    "ws": "^8.22.0"
   },
   "keywords": [
     "coopanion",
@@ -39,9 +45,6 @@
   ],
   "author": "曳尔沐",
   "license": "MIT",
-  "dependencies": {
-    "ws": "^8.22.0"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BaiLin-bit/elymes-nte-web.git"
@@ -54,6 +57,32 @@
     "kind": "world",
     "api": 6,
     "displayName": "和Y？聊天",
+    "locales": {
+      "zh": {
+        "displayName": "和Y？聊天",
+        "description": "把聊天页重绘成 QQ2007 / Windows 98 复古窗口与千禧风 CRT 窗口，立绘随关键词换表情，另附一只会躲光标、会冒气泡的透明桌宠。"
+      },
+      "en": {
+        "displayName": "Chat with Y?",
+        "description": "Redraws the Coopanion chat into QQ2007 / Windows 98 retro windows and a millennium CRT window, with a keyword-reactive pixel portrait and a transparent desktop pet."
+      }
+    },
+    "icon": "assets/icon.png",
+    "screenshots": [
+      "assets/screenshot.png",
+      "assets/screenshots/01-qq-window.png",
+      "assets/screenshots/02-art-desk.png",
+      "assets/screenshots/03-pet-and-windows.png",
+      "assets/screenshots/04-crt-window.png"
+    ],
+    "tags": [
+      "coopanion",
+      "companion",
+      "browser",
+      "local",
+      "internal-state",
+      "experimental"
+    ],
     "webUiClient": "dist/webui.js",
     "webUiStyle": "dist/webui.css"
   }
