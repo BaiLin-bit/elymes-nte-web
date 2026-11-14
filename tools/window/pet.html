@@ -284,8 +284,11 @@
 
     // 点击穿透：只在光标压到角色、或菜单开着时接管鼠标
     let interactive = false;
+    // 刚点过的一小段时间内保持可点：双击时角色会躲开，第二下不能掉进点击穿透里
+    let interactiveUntil = 0;
     function syncInteractive(force) {
-      const want = menu.classList.contains('show') || (cursor.on && onPet(cursor.x, cursor.y));
+      const want = menu.classList.contains('show') || performance.now() < interactiveUntil
+        || (cursor.on && onPet(cursor.x, cursor.y));
       // 宿主那边的鼠标持有权是 1.5 秒的租约，只在状态变化时报一次会过期，
       // 表现就是「菜单明明开着，过一会儿就点不动了」。所以只要还在持有就一直续租。
       if (!want && !force && want === interactive) return;
@@ -585,17 +588,41 @@
 
     // ---------------- 交互 ----------------
     let clickTimer = 0;
+    let lastClick = { t: 0, x: 0, y: 0 };
+    const DBL_GAP = 420;     // 两下点击的间隔上限（毫秒）
+    const DBL_SLACK = 1.7;   // 第二下离第一下多远也算同一组双击
 
     window.addEventListener('click', (e) => {
       if (menu.classList.contains('show')) return;
-      if (!onPet(e.clientX, e.clientY)) return;
+      const now = performance.now();
+      const nearLast = now - lastClick.t <= DBL_GAP &&
+        Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) <= SIZE * DBL_SLACK;
+      if (!onPet(e.clientX, e.clientY) && !nearLast) return;
+      // 点到了就把交互权多续一小段：角色会躲，第二下不能掉进点击穿透
+      interactiveUntil = now + 800;
+      syncInteractive(true);
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(() => { showBubble(); }, CLICK_DELAY);
+      if (nearLast) {
+        // 双击在这里自己判，不再只依赖原生 dblclick（角色会移动，原生事件也常被点击穿透吞掉）
+        lastClick.t = 0;
+        triggerHit();
+        showBubble();
+        return;
+      }
+      lastClick = { t: now, x: e.clientX, y: e.clientY };
+      clickTimer = setTimeout(() => { lastClick.t = 0; showBubble(); }, CLICK_DELAY);
     });
 
     window.addEventListener('dblclick', (e) => {
-      if (!onPet(e.clientX, e.clientY)) return;
+      if (pet.mode === 'hit') return;
+      const now = performance.now();
+      const nearLast = now - lastClick.t <= DBL_GAP &&
+        Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) <= SIZE * DBL_SLACK;
+      if (!onPet(e.clientX, e.clientY) && !nearLast) return;
       clearTimeout(clickTimer);
+      lastClick.t = 0;
+      interactiveUntil = now + 800;
+      syncInteractive(true);
       triggerHit();
       showBubble();
     });

@@ -1,6 +1,6 @@
 {
   "name": "elymes-nte-web",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "网页端的和Y？聊天：把聊天页做成 QQ2007 / Windows 98 复古窗口与千禧风 CRT 窗口，立绘随关键词换表情，另附透明桌宠（可冒像素气泡）。包内附《开发中遇到的问题.md》，还藏着一个和数字、正文原文有关的彩蛋。",
   "type": "module",
   "main": "./src/index.mjs",
@@ -11,7 +11,14 @@
   "files": [
     "src",
     "dist",
-    "assets",
+    "assets/face",
+    "assets/fonts/*.woff2",
+    "assets/pet",
+    "assets/portrait",
+    "assets/icon.png",
+    "assets/screenshot.png",
+    "assets/screenshots",
+    "assets/SOURCES.md",
     "tools/build.mjs",
     "tools/webui.source.js",
     "tools/window-server.mjs",
@@ -70,10 +77,10 @@
     "icon": "assets/icon.png",
     "screenshots": [
       "assets/screenshot.png",
-      "assets/screenshots/01-qq-window.png",
-      "assets/screenshots/02-art-desk.png",
-      "assets/screenshots/03-pet-and-windows.png",
-      "assets/screenshots/04-crt-window.png"
+      "assets/screenshots/01-qq-window.jpg",
+      "assets/screenshots/02-art-desk.jpg",
+      "assets/screenshots/03-pet-and-windows.jpg",
+      "assets/screenshots/04-crt-window.jpg"
     ],
     "tags": [
       "coopanion",

@@ -35,18 +35,18 @@
   };
 
   const BASES = [
-    './nt/base1.png', './nt/base2.png', './nt/confident.png',
-    './nt/request1.png', './nt/request2.png', './nt/request3.png',
+    './nt/base1.webp', './nt/base2.webp', './nt/confident.webp',
+    './nt/request1.webp', './nt/request2.webp', './nt/request3.webp',
   ];
 
   const ART = [
-    { src: './nt/paint.png',    title: '未命名 - 画图' },
-    { src: './nt/base2.png',    title: 'YMB' },
-    { src: './nt/eye.png',      title: 'virus.exe' },
-    { src: './nt/door.png',     title: '新建文件夹' },
-    { src: './nt/victory.png',  title: '世界' },
-    { src: './nt/dance.png',    title: '跳舞' },
-    { src: './nt/confident.png', title: '我的电脑' },
+    { src: './nt/paint.webp',    title: '未命名 - 画图' },
+    { src: './nt/base2.webp',    title: 'YMB' },
+    { src: './nt/eye.webp',      title: 'virus.exe' },
+    { src: './nt/door.webp',     title: '新建文件夹' },
+    { src: './nt/victory.webp',  title: '世界' },
+    { src: './nt/dance.webp',    title: '跳舞' },
+    { src: './nt/confident.webp', title: '我的电脑' },
   ];
 
   const TITLES = [
